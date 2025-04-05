@@ -12,6 +12,23 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Unauthorized from "./pages/Unauthorized";
 import NotFound from "./pages/NotFound";
+import Index from "./pages/Index";
+
+// HR Pages
+import StudentManagement from "./pages/hr/StudentManagement";
+import AssessmentManagement from "./pages/hr/AssessmentManagement";
+import ResultsDashboard from "./pages/hr/ResultsDashboard";
+import CreateAssessment from "./pages/hr/CreateAssessment";
+import ImportQuestions from "./pages/hr/ImportQuestions";
+import AssessmentDetails from "./pages/hr/AssessmentDetails";
+
+// Student Pages
+import MyAssessments from "./pages/student/MyAssessments";
+import MyResults from "./pages/student/MyResults";
+import TakeAssessment from "./pages/student/TakeAssessment";
+
+// Shared Pages
+import UserProfile from "./pages/shared/UserProfile";
 
 // Auth protection
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -30,6 +47,7 @@ const App = () => (
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<Login />} />
             <Route path="/unauthorized" element={<Unauthorized />} />
+            <Route path="/index" element={<Index />} />
             
             {/* Protected routes */}
             <Route path="/dashboard" element={
@@ -41,36 +59,56 @@ const App = () => (
             {/* Protected routes - HR only */}
             <Route path="/students" element={
               <ProtectedRoute allowedRoles={['hr']}>
-                <div>Student Management (Coming Soon)</div>
+                <StudentManagement />
               </ProtectedRoute>
             } />
             <Route path="/assessments" element={
               <ProtectedRoute allowedRoles={['hr']}>
-                <div>Assessment Management (Coming Soon)</div>
+                <AssessmentManagement />
+              </ProtectedRoute>
+            } />
+            <Route path="/assessments/create" element={
+              <ProtectedRoute allowedRoles={['hr']}>
+                <CreateAssessment />
+              </ProtectedRoute>
+            } />
+            <Route path="/assessments/import" element={
+              <ProtectedRoute allowedRoles={['hr']}>
+                <ImportQuestions />
+              </ProtectedRoute>
+            } />
+            <Route path="/assessments/:id" element={
+              <ProtectedRoute allowedRoles={['hr']}>
+                <AssessmentDetails />
               </ProtectedRoute>
             } />
             <Route path="/results" element={
               <ProtectedRoute allowedRoles={['hr']}>
-                <div>Results Dashboard (Coming Soon)</div>
+                <ResultsDashboard />
               </ProtectedRoute>
             } />
             
             {/* Protected routes - Student only */}
             <Route path="/my-assessments" element={
               <ProtectedRoute allowedRoles={['student']}>
-                <div>My Assessments (Coming Soon)</div>
+                <MyAssessments />
+              </ProtectedRoute>
+            } />
+            <Route path="/my-assessments/:id" element={
+              <ProtectedRoute allowedRoles={['student']}>
+                <TakeAssessment />
               </ProtectedRoute>
             } />
             <Route path="/my-results" element={
               <ProtectedRoute allowedRoles={['student']}>
-                <div>My Results (Coming Soon)</div>
+                <MyResults />
               </ProtectedRoute>
             } />
             
             {/* Shared protected routes */}
             <Route path="/profile" element={
               <ProtectedRoute>
-                <div>User Profile (Coming Soon)</div>
+                <UserProfile />
               </ProtectedRoute>
             } />
             
