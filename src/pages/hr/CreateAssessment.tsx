@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format } from 'date-fns';
-import { Calendar as CalendarIcon, Plus, Trash2, Clock, ChevronDown } from 'lucide-react';
+import { Calendar as CalendarIcon, Plus, Trash2, Clock, ChevronDown, Database } from 'lucide-react';
 import { 
   Select,
   SelectContent,
@@ -20,6 +20,11 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/use-toast';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Badge } from '@/components/ui/badge';
+import QuestionBankSelector, { QuestionType } from '@/components/assessment/QuestionBankSelector';
+import { AssessmentType } from '@/models/assessment';
 
 interface Section {
   id: string;
@@ -33,6 +38,9 @@ interface Question {
   text: string;
   options: string[];
   correctAnswer: number;
+  category?: string;
+  difficulty?: 'easy' | 'medium' | 'hard';
+  type?: 'multiple-choice' | 'coding' | 'subjective' | 'personality';
 }
 
 const CreateAssessment: React.FC = () => {
@@ -41,6 +49,7 @@ const CreateAssessment: React.FC = () => {
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [assessmentType, setAssessmentType] = useState<AssessmentType>('aptitude');
   const [sections, setSections] = useState<Section[]>([
     {
       id: '1',
@@ -56,6 +65,9 @@ const CreateAssessment: React.FC = () => {
       ]
     }
   ]);
+  
+  const [showQuestionBank, setShowQuestionBank] = useState(false);
+  const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
   
   const addSection = () => {
     setSections([...sections, {
@@ -85,16 +97,27 @@ const CreateAssessment: React.FC = () => {
     setSections(updatedSections);
   };
   
-  const addQuestion = (sectionIndex: number) => {
+  const addQuestion = (sectionIndex: number, question?: QuestionType) => {
     const updatedSections = [...sections];
     const section = updatedSections[sectionIndex];
     
-    section.questions.push({
-      id: (section.questions.length + 1).toString(),
-      text: '',
-      options: ['', '', '', ''],
-      correctAnswer: 0
-    });
+    if (question) {
+      // Add question from question bank
+      section.questions.push({
+        ...question,
+        id: (section.questions.length + 1).toString(),
+      });
+    } else {
+      // Add empty question
+      section.questions.push({
+        id: (section.questions.length + 1).toString(),
+        text: '',
+        options: ['', '', '', ''],
+        correctAnswer: 0,
+        type: 'multiple-choice',
+        difficulty: 'easy'
+      });
+    }
     
     setSections(updatedSections);
   };
@@ -127,6 +150,16 @@ const CreateAssessment: React.FC = () => {
   
   const getTotalQuestions = () => {
     return sections.reduce((total, section) => total + section.questions.length, 0);
+  };
+  
+  const handleAddFromQuestionBank = (question: QuestionType) => {
+    addQuestion(currentSectionIndex, question);
+    setShowQuestionBank(false);
+    
+    toast({
+      title: "Question added",
+      description: "Question has been added to the section"
+    });
   };
   
   const handleSaveDraft = () => {
@@ -187,14 +220,17 @@ const CreateAssessment: React.FC = () => {
           return;
         }
         
-        for (const option of question.options) {
-          if (!option) {
-            toast({
-              title: "Empty option",
-              description: "Please fill in all answer options",
-              variant: "destructive"
-            });
-            return;
+        // Skip validation for coding and subjective questions as they don't need options
+        if (question.type !== 'coding' && question.type !== 'subjective') {
+          for (const option of question.options) {
+            if (!option) {
+              toast({
+                title: "Empty option",
+                description: "Please fill in all answer options",
+                variant: "destructive"
+              });
+              return;
+            }
           }
         }
       }
@@ -206,6 +242,21 @@ const CreateAssessment: React.FC = () => {
     });
     
     navigate('/assessments');
+  };
+
+  const renderAssessmentTypeDescription = () => {
+    switch(assessmentType) {
+      case 'aptitude':
+        return "Evaluate candidates' cognitive abilities, logical reasoning, and problem-solving skills.";
+      case 'coding':
+        return "Assess candidates' programming skills, algorithm knowledge, and code quality.";
+      case 'personality':
+        return "Understand candidates' behavior patterns, work style, and cultural fit.";
+      case 'interview':
+        return "Simulate interview scenarios or group discussions to evaluate communication skills.";
+      default:
+        return "";
+    }
   };
 
   return (
@@ -270,6 +321,34 @@ const CreateAssessment: React.FC = () => {
                   </Popover>
                 </div>
               </div>
+
+              <div className="space-y-2">
+                <Label>Assessment Type</Label>
+                <RadioGroup 
+                  value={assessmentType} 
+                  onValueChange={(value: AssessmentType) => setAssessmentType(value)}
+                  className="grid grid-cols-2 md:grid-cols-4 gap-2"
+                >
+                  <div className="flex items-center space-x-2 border rounded-md p-3 cursor-pointer hover:bg-slate-50">
+                    <RadioGroupItem value="aptitude" id="aptitude" />
+                    <Label htmlFor="aptitude" className="cursor-pointer">Aptitude Test</Label>
+                  </div>
+                  <div className="flex items-center space-x-2 border rounded-md p-3 cursor-pointer hover:bg-slate-50">
+                    <RadioGroupItem value="coding" id="coding" />
+                    <Label htmlFor="coding" className="cursor-pointer">Coding Challenge</Label>
+                  </div>
+                  <div className="flex items-center space-x-2 border rounded-md p-3 cursor-pointer hover:bg-slate-50">
+                    <RadioGroupItem value="personality" id="personality" />
+                    <Label htmlFor="personality" className="cursor-pointer">Personality Assessment</Label>
+                  </div>
+                  <div className="flex items-center space-x-2 border rounded-md p-3 cursor-pointer hover:bg-slate-50">
+                    <RadioGroupItem value="interview" id="interview" />
+                    <Label htmlFor="interview" className="cursor-pointer">Interview Simulation</Label>
+                  </div>
+                </RadioGroup>
+                <p className="text-sm text-muted-foreground mt-2">{renderAssessmentTypeDescription()}</p>
+              </div>
+              
               <div className="space-y-2">
                 <Label htmlFor="description">Description</Label>
                 <Textarea 
@@ -328,7 +407,7 @@ const CreateAssessment: React.FC = () => {
             <CardContent>
               <Tabs defaultValue={sections[0]?.id.toString()}>
                 <TabsList className="mb-4">
-                  {sections.map((section, index) => (
+                  {sections.map((section) => (
                     <TabsTrigger key={section.id} value={section.id.toString()}>
                       {section.name}
                     </TabsTrigger>
@@ -374,10 +453,34 @@ const CreateAssessment: React.FC = () => {
                     <div className="space-y-4">
                       <div className="flex justify-between items-center">
                         <h3 className="text-lg font-medium">Questions</h3>
-                        <Button size="sm" onClick={() => addQuestion(sectionIndex)}>
-                          <Plus className="h-4 w-4 mr-1" />
-                          Add Question
-                        </Button>
+                        <div className="flex space-x-2">
+                          <Dialog open={showQuestionBank} onOpenChange={setShowQuestionBank}>
+                            <DialogTrigger asChild>
+                              <Button 
+                                size="sm" 
+                                variant="outline"
+                                onClick={() => setCurrentSectionIndex(sectionIndex)}
+                              >
+                                <Database className="h-4 w-4 mr-1" />
+                                Add from Question Bank
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-3xl">
+                              <DialogHeader>
+                                <DialogTitle>Question Bank</DialogTitle>
+                                <DialogDescription>
+                                  Browse and add questions from the question bank
+                                </DialogDescription>
+                              </DialogHeader>
+                              <QuestionBankSelector onAddQuestion={handleAddFromQuestionBank} />
+                            </DialogContent>
+                          </Dialog>
+                          
+                          <Button size="sm" onClick={() => addQuestion(sectionIndex)}>
+                            <Plus className="h-4 w-4 mr-1" />
+                            Add New Question
+                          </Button>
+                        </div>
                       </div>
                       
                       {section.questions.map((question, questionIndex) => (
@@ -398,6 +501,62 @@ const CreateAssessment: React.FC = () => {
                             </div>
                           </CardHeader>
                           <CardContent className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <Label htmlFor={`question-type-${section.id}-${question.id}`}>Question Type</Label>
+                                <Select
+                                  value={question.type || 'multiple-choice'}
+                                  onValueChange={(value) => updateQuestion(sectionIndex, questionIndex, 'type', value)}
+                                >
+                                  <SelectTrigger id={`question-type-${section.id}-${question.id}`}>
+                                    <SelectValue placeholder="Select type" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="multiple-choice">Multiple Choice</SelectItem>
+                                    <SelectItem value="coding">Coding</SelectItem>
+                                    <SelectItem value="subjective">Subjective</SelectItem>
+                                    <SelectItem value="personality">Personality</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor={`question-difficulty-${section.id}-${question.id}`}>Difficulty Level</Label>
+                                <Select
+                                  value={question.difficulty || 'easy'}
+                                  onValueChange={(value) => updateQuestion(sectionIndex, questionIndex, 'difficulty', value)}
+                                >
+                                  <SelectTrigger id={`question-difficulty-${section.id}-${question.id}`}>
+                                    <SelectValue placeholder="Select difficulty" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="easy">Easy</SelectItem>
+                                    <SelectItem value="medium">Medium</SelectItem>
+                                    <SelectItem value="hard">Hard</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                            
+                            <div className="space-y-2">
+                              <Label htmlFor={`question-category-${section.id}-${question.id}`}>Category</Label>
+                              <Select
+                                value={question.category || 'technical'}
+                                onValueChange={(value) => updateQuestion(sectionIndex, questionIndex, 'category', value)}
+                              >
+                                <SelectTrigger id={`question-category-${section.id}-${question.id}`}>
+                                  <SelectValue placeholder="Select category" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="technical">Technical</SelectItem>
+                                  <SelectItem value="quantitative">Quantitative</SelectItem>
+                                  <SelectItem value="verbal">Verbal</SelectItem>
+                                  <SelectItem value="logical-reasoning">Logical Reasoning</SelectItem>
+                                  <SelectItem value="problem-solving">Problem Solving</SelectItem>
+                                  <SelectItem value="personality">Personality</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+
                             <div className="space-y-2">
                               <Label htmlFor={`question-text-${section.id}-${question.id}`}>Question</Label>
                               <Textarea
@@ -408,41 +567,61 @@ const CreateAssessment: React.FC = () => {
                               />
                             </div>
                             
-                            <div className="space-y-3">
-                              <Label>Answer Options</Label>
-                              {question.options.map((option, optionIndex) => (
-                                <div key={optionIndex} className="flex items-center space-x-2">
-                                  <Input
-                                    placeholder={`Option ${optionIndex + 1}`}
-                                    value={option}
-                                    onChange={(e) => {
-                                      const updatedOptions = [...question.options];
-                                      updatedOptions[optionIndex] = e.target.value;
-                                      updateQuestion(sectionIndex, questionIndex, 'options', updatedOptions);
-                                    }}
-                                  />
-                                </div>
-                              ))}
-                            </div>
+                            {(question.type !== 'coding' && question.type !== 'subjective') && (
+                              <div className="space-y-3">
+                                <Label>Answer Options</Label>
+                                {question.options.map((option, optionIndex) => (
+                                  <div key={optionIndex} className="flex items-center space-x-2">
+                                    <Input
+                                      placeholder={`Option ${optionIndex + 1}`}
+                                      value={option}
+                                      onChange={(e) => {
+                                        const updatedOptions = [...question.options];
+                                        updatedOptions[optionIndex] = e.target.value;
+                                        updateQuestion(sectionIndex, questionIndex, 'options', updatedOptions);
+                                      }}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                             
-                            <div className="space-y-2">
-                              <Label htmlFor={`correct-answer-${section.id}-${question.id}`}>Correct Answer</Label>
-                              <Select
-                                value={question.correctAnswer.toString()}
-                                onValueChange={(value) => updateQuestion(sectionIndex, questionIndex, 'correctAnswer', parseInt(value))}
-                              >
-                                <SelectTrigger id={`correct-answer-${section.id}-${question.id}`}>
-                                  <SelectValue placeholder="Select the correct answer" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {question.options.map((option, idx) => (
-                                    <SelectItem key={idx} value={idx.toString()}>
-                                      Option {idx + 1}: {option || `(Empty option ${idx + 1})`}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
+                            {(question.type !== 'coding' && question.type !== 'subjective') && (
+                              <div className="space-y-2">
+                                <Label htmlFor={`correct-answer-${section.id}-${question.id}`}>Correct Answer</Label>
+                                <Select
+                                  value={question.correctAnswer.toString()}
+                                  onValueChange={(value) => updateQuestion(sectionIndex, questionIndex, 'correctAnswer', parseInt(value))}
+                                >
+                                  <SelectTrigger id={`correct-answer-${section.id}-${question.id}`}>
+                                    <SelectValue placeholder="Select the correct answer" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {question.options.map((option, idx) => (
+                                      <SelectItem key={idx} value={idx.toString()}>
+                                        Option {idx + 1}: {option || `(Empty option ${idx + 1})`}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            )}
+                            
+                            {(question.difficulty || question.category) && (
+                              <div className="flex gap-1 mt-2">
+                                {question.difficulty && (
+                                  <Badge variant={
+                                    question.difficulty === 'easy' ? 'outline' : 
+                                    question.difficulty === 'medium' ? 'secondary' : 'destructive'
+                                  }>
+                                    {question.difficulty}
+                                  </Badge>
+                                )}
+                                {question.category && (
+                                  <Badge variant="outline">{question.category}</Badge>
+                                )}
+                              </div>
+                            )}
                           </CardContent>
                         </Card>
                       ))}
