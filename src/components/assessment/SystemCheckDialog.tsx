@@ -3,12 +3,11 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { AlertCircle, Check, Camera, Cpu, Monitor, Mic, Wifi } from 'lucide-react';
-import { useToast } from '@/components/ui/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
 interface SystemCheckDialogProps {
   open: boolean;
-  onOpenChange: (open: boolean) => void;
   onComplete: (success: boolean, studentImage?: string) => void;
 }
 
@@ -19,7 +18,7 @@ interface SystemCheckResult {
   message: string;
 }
 
-const SystemCheckDialog: React.FC<SystemCheckDialogProps> = ({ open, onOpenChange, onComplete }) => {
+const SystemCheckDialog: React.FC<SystemCheckDialogProps> = ({ open, onComplete }) => {
   const { toast } = useToast();
   const [currentStep, setCurrentStep] = useState<'checking' | 'camera' | 'complete'>('checking');
   const [studentImage, setStudentImage] = useState<string | null>(null);
@@ -159,25 +158,28 @@ const SystemCheckDialog: React.FC<SystemCheckDialogProps> = ({ open, onOpenChang
   
   // Complete the system check process
   const handleComplete = () => {
+    if (!studentImage) {
+      toast({
+        title: "Photo required",
+        description: "You must capture a photo before proceeding.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
     }
     
-    onComplete(true, studentImage || undefined);
-    onOpenChange(false);
-  };
-  
-  // Close dialog handler
-  const handleCloseDialog = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-    }
-    onOpenChange(false);
+    onComplete(true, studentImage);
   };
   
   return (
-    <Dialog open={open} onOpenChange={handleCloseDialog}>
-      <DialogContent className="sm:max-w-lg">
+    <Dialog open={open} onOpenChange={() => {
+      // This prevents the dialog from closing when clicking outside or pressing escape
+      return;
+    }}>
+      <DialogContent className="sm:max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>
             {currentStep === 'checking' ? 'System Check' : 

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -7,11 +6,10 @@ import { Progress } from '@/components/ui/progress';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { AlertCircle, Clock, ChevronLeft, ChevronRight, Flag } from 'lucide-react';
-import { useToast } from '@/components/ui/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import SystemCheckDialog from '@/components/assessment/SystemCheckDialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
-// Mock assessment with sections and questions
 const mockAssessment = {
   id: '1',
   title: 'Data Structures & Algorithms',
@@ -98,24 +96,21 @@ const TakeAssessment: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   
-  // System check and proctoring states
   const [showSystemCheck, setShowSystemCheck] = useState(true);
   const [studentImage, setStudentImage] = useState<string | undefined>();
   const [videoAllowed, setVideoAllowed] = useState(false);
   const [showWarningDialog, setShowWarningDialog] = useState(false);
   const [warningMessage, setWarningMessage] = useState('');
   
-  // Assessment states
   const [currentSection, setCurrentSection] = useState(0);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [userAnswers, setUserAnswers] = useState<Record<string, number>>({});
-  const [timeLeft, setTimeLeft] = useState(mockAssessment.totalTime * 60); // in seconds
+  const [timeLeft, setTimeLeft] = useState(mockAssessment.totalTime * 60);
   const [sectionTimeLeft, setSectionTimeLeft] = useState(mockAssessment.sections[0].timeLimit * 60);
   const [warningCount, setWarningCount] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [assessmentStarted, setAssessmentStarted] = useState(false);
   
-  // Timer for the overall assessment
   useEffect(() => {
     if (!assessmentStarted) return;
     
@@ -133,7 +128,6 @@ const TakeAssessment: React.FC = () => {
     return () => clearInterval(timer);
   }, [assessmentStarted]);
   
-  // Timer for the current section
   useEffect(() => {
     if (!assessmentStarted) return;
     
@@ -141,7 +135,6 @@ const TakeAssessment: React.FC = () => {
       setSectionTimeLeft(prev => {
         if (prev <= 1) {
           clearInterval(sectionTimer);
-          // Move to next section if time's up
           if (currentSection < mockAssessment.sections.length - 1) {
             setCurrentSection(currentSection + 1);
             setCurrentQuestion(0);
@@ -162,7 +155,6 @@ const TakeAssessment: React.FC = () => {
     return () => clearInterval(sectionTimer);
   }, [currentSection, assessmentStarted]);
   
-  // Handle window blur events for proctoring
   useEffect(() => {
     if (!assessmentStarted) return;
     
@@ -178,23 +170,20 @@ const TakeAssessment: React.FC = () => {
     };
   }, [assessmentStarted]);
   
-  // Detect multiple screen detection (if available in browser)
   useEffect(() => {
     if (!assessmentStarted || !videoAllowed) return;
     
-    // This is a simplified version - in a real app, this would be more sophisticated
     const detectMultipleScreens = () => {
       if (window.screen && window.screen.availWidth > window.innerWidth * 1.5) {
         handleSuspiciousActivity('Multiple screens detected');
       }
     };
     
-    const interval = setInterval(detectMultipleScreens, 10000); // Check every 10 seconds
+    const interval = setInterval(detectMultipleScreens, 10000);
     
     return () => clearInterval(interval);
   }, [assessmentStarted, videoAllowed]);
   
-  // Handle suspicious activity detection
   const handleSuspiciousActivity = (reason: string) => {
     const newCount = warningCount + 1;
     setWarningCount(newCount);
@@ -211,19 +200,8 @@ const TakeAssessment: React.FC = () => {
     }
   };
   
-  const section = mockAssessment.sections[currentSection];
-  const question = section?.questions[currentQuestion];
-  
-  // Format time as mm:ss
-  const formatTime = (timeInSeconds: number) => {
-    const minutes = Math.floor(timeInSeconds / 60);
-    const seconds = timeInSeconds % 60;
-    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-  };
-  
-  // System check completion handler
   const handleSystemCheckComplete = (success: boolean, capturedImage?: string) => {
-    if (success) {
+    if (success && capturedImage) {
       setStudentImage(capturedImage);
       setShowSystemCheck(false);
       setAssessmentStarted(true);
@@ -234,7 +212,11 @@ const TakeAssessment: React.FC = () => {
         description: "Your system check is complete. You can now begin the assessment.",
       });
     } else {
-      navigate('/my-assessments');
+      toast({
+        title: "System check required",
+        description: "You must complete the system check to proceed.",
+        variant: "destructive",
+      });
     }
   };
   
@@ -267,7 +249,6 @@ const TakeAssessment: React.FC = () => {
   
   const handleSubmit = () => {
     setIsSubmitting(true);
-    // Simulate API call to submit answers
     setTimeout(() => {
       toast({
         title: "Assessment submitted",
@@ -277,7 +258,6 @@ const TakeAssessment: React.FC = () => {
     }, 1500);
   };
   
-  // Calculate progress percentage
   const calculateProgress = () => {
     let totalQuestions = 0;
     let completedQuestions = 0;
@@ -286,10 +266,8 @@ const TakeAssessment: React.FC = () => {
       totalQuestions += sect.questions.length;
       
       if (sIdx < currentSection) {
-        // All questions in previous sections are considered completed
         completedQuestions += sect.questions.length;
       } else if (sIdx === currentSection) {
-        // Count completed questions in current section
         sect.questions.forEach((q) => {
           if (userAnswers[q.id] !== undefined) {
             completedQuestions++;
@@ -301,7 +279,6 @@ const TakeAssessment: React.FC = () => {
     return (completedQuestions / totalQuestions) * 100;
   };
   
-  // Calculate question index (overall)
   const getQuestionIndex = () => {
     let questionIndex = currentQuestion;
     
@@ -340,7 +317,6 @@ const TakeAssessment: React.FC = () => {
 
   return (
     <div className="h-screen flex flex-col bg-slate-50">
-      {/* Warning Dialog */}
       <AlertDialog open={showWarningDialog} onOpenChange={setShowWarningDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -366,7 +342,6 @@ const TakeAssessment: React.FC = () => {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Header */}
       <header className="bg-emerald-600 text-white py-4 px-6">
         <div className="flex justify-between items-center">
           <div>
@@ -456,7 +431,6 @@ const TakeAssessment: React.FC = () => {
         </Card>
       </div>
       
-      {/* Footer */}
       <footer className="bg-white border-t py-3 px-6">
         <div className="flex justify-between items-center">
           <div className="text-sm text-muted-foreground">
