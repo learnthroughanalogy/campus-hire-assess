@@ -11,7 +11,7 @@ interface ProtectedRouteProps {
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ 
   children, 
-  allowedRoles = ['student', 'hr']
+  allowedRoles = ['administrator', 'recruiter', 'candidate', 'sme', 'university_spoc'] 
 }) => {
   const { user, isLoading } = useAuth();
 
@@ -24,7 +24,12 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     return <Navigate to="/login" replace />;
   }
 
-  if (allowedRoles.length > 0 && !allowedRoles.includes(user.role)) {
+  // Handle legacy roles
+  let actualRole = user.role;
+  if (user.role === 'hr') actualRole = 'recruiter';
+  if (user.role === 'student') actualRole = 'candidate';
+  
+  if (allowedRoles.length > 0 && !allowedRoles.includes(actualRole)) {
     return <Navigate to="/unauthorized" replace />;
   }
 

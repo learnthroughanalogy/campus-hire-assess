@@ -14,7 +14,7 @@ import Unauthorized from "./pages/Unauthorized";
 import NotFound from "./pages/NotFound";
 import Index from "./pages/Index";
 
-// HR Pages
+// HR/Recruiter Pages
 import StudentManagement from "./pages/hr/StudentManagement";
 import AssessmentManagement from "./pages/hr/AssessmentManagement";
 import ResultsDashboard from "./pages/hr/ResultsDashboard";
@@ -22,7 +22,7 @@ import CreateAssessment from "./pages/hr/CreateAssessment";
 import ImportQuestions from "./pages/hr/ImportQuestions";
 import AssessmentDetails from "./pages/hr/AssessmentDetails";
 
-// Student Pages
+// Candidate/Student Pages
 import MyAssessments from "./pages/student/MyAssessments";
 import MyResults from "./pages/student/MyResults";
 import TakeAssessment from "./pages/student/TakeAssessment";
@@ -56,51 +56,51 @@ const App = () => (
               </ProtectedRoute>
             } />
             
-            {/* Protected routes - HR only */}
+            {/* Protected routes - Recruiter only */}
             <Route path="/students" element={
-              <ProtectedRoute allowedRoles={['hr']}>
+              <ProtectedRoute allowedRoles={['administrator', 'recruiter', 'university_spoc']}>
                 <StudentManagement />
               </ProtectedRoute>
             } />
             <Route path="/assessments" element={
-              <ProtectedRoute allowedRoles={['hr']}>
+              <ProtectedRoute allowedRoles={['administrator', 'recruiter', 'sme']}>
                 <AssessmentManagement />
               </ProtectedRoute>
             } />
             <Route path="/assessments/create" element={
-              <ProtectedRoute allowedRoles={['hr']}>
+              <ProtectedRoute allowedRoles={['administrator', 'recruiter', 'sme']}>
                 <CreateAssessment />
               </ProtectedRoute>
             } />
             <Route path="/assessments/import" element={
-              <ProtectedRoute allowedRoles={['hr']}>
+              <ProtectedRoute allowedRoles={['administrator', 'recruiter', 'sme']}>
                 <ImportQuestions />
               </ProtectedRoute>
             } />
             <Route path="/assessments/:id" element={
-              <ProtectedRoute allowedRoles={['hr']}>
+              <ProtectedRoute allowedRoles={['administrator', 'recruiter', 'sme']}>
                 <AssessmentDetails />
               </ProtectedRoute>
             } />
             <Route path="/results" element={
-              <ProtectedRoute allowedRoles={['hr']}>
+              <ProtectedRoute allowedRoles={['administrator', 'recruiter']}>
                 <ResultsDashboard />
               </ProtectedRoute>
             } />
             
-            {/* Protected routes - Student only */}
+            {/* Protected routes - Candidate only */}
             <Route path="/my-assessments" element={
-              <ProtectedRoute allowedRoles={['student']}>
+              <ProtectedRoute allowedRoles={['candidate']}>
                 <MyAssessments />
               </ProtectedRoute>
             } />
             <Route path="/my-assessments/:id" element={
-              <ProtectedRoute allowedRoles={['student']}>
+              <ProtectedRoute allowedRoles={['candidate']}>
                 <TakeAssessment />
               </ProtectedRoute>
             } />
             <Route path="/my-results" element={
-              <ProtectedRoute allowedRoles={['student']}>
+              <ProtectedRoute allowedRoles={['candidate']}>
                 <MyResults />
               </ProtectedRoute>
             } />

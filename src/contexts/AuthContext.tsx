@@ -1,7 +1,6 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
-export type UserRole = 'student' | 'hr' | null;
+export type UserRole = 'administrator' | 'recruiter' | 'candidate' | 'sme' | 'university_spoc' | null;
 
 interface User {
   id: string;
@@ -16,8 +15,11 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
-  isHR: boolean;
-  isStudent: boolean;
+  isAdministrator: boolean;
+  isRecruiter: boolean;
+  isCandidate: boolean;
+  isSME: boolean;
+  isUniversitySPOC: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -32,8 +34,15 @@ export const useAuth = () => {
 
 // Mock users for demonstration
 const MOCK_USERS = [
-  { id: '1', name: 'HR Manager', email: 'hr@example.com', password: 'password', role: 'hr' as UserRole },
-  { id: '2', name: 'John Student', email: 'student@example.com', password: 'password', role: 'student' as UserRole },
+  { id: '1', name: 'Admin User', email: 'admin@example.com', password: 'password', role: 'administrator' as UserRole },
+  { id: '2', name: 'Recruiter User', email: 'recruiter@example.com', password: 'password', role: 'recruiter' as UserRole },
+  { id: '3', name: 'John Candidate', email: 'candidate@example.com', password: 'password', role: 'candidate' as UserRole },
+  { id: '4', name: 'Expert SME', email: 'sme@example.com', password: 'password', role: 'sme' as UserRole },
+  { id: '5', name: 'University SPOC', email: 'university@example.com', password: 'password', role: 'university_spoc' as UserRole },
+  
+  // Keep backward compatibility for existing users
+  { id: '6', name: 'HR Manager', email: 'hr@example.com', password: 'password', role: 'recruiter' as UserRole },
+  { id: '7', name: 'John Student', email: 'student@example.com', password: 'password', role: 'candidate' as UserRole },
 ];
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -83,8 +92,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     login,
     logout,
     isAuthenticated: !!user,
-    isHR: user?.role === 'hr',
-    isStudent: user?.role === 'student',
+    isAdministrator: user?.role === 'administrator',
+    isRecruiter: user?.role === 'recruiter' || user?.role === 'hr', // For backward compatibility
+    isCandidate: user?.role === 'candidate' || user?.role === 'student', // For backward compatibility
+    isSME: user?.role === 'sme',
+    isUniversitySPOC: user?.role === 'university_spoc',
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

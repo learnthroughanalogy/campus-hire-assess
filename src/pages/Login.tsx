@@ -105,16 +105,33 @@ const Login: React.FC = () => {
               </CardContent>
               <CardFooter className="flex justify-center pt-0">
                 <div className="text-sm text-center text-gray-500">
-                  Demo Credentials:
+                  <p className="mb-3">Demo Credentials:</p>
                   <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
                     <div className="p-2 bg-emerald-50 rounded">
-                      <div className="font-semibold">HR Login</div>
-                      <div>hr@example.com</div>
+                      <div className="font-semibold">Administrator</div>
+                      <div>admin@example.com</div>
                       <div>password</div>
                     </div>
                     <div className="p-2 bg-emerald-50 rounded">
-                      <div className="font-semibold">Student Login</div>
-                      <div>student@example.com</div>
+                      <div className="font-semibold">Recruiter</div>
+                      <div>recruiter@example.com</div>
+                      <div>password</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 mt-2 text-xs">
+                    <div className="p-2 bg-emerald-50 rounded">
+                      <div className="font-semibold">Candidate</div>
+                      <div>candidate@example.com</div>
+                      <div>password</div>
+                    </div>
+                    <div className="p-2 bg-emerald-50 rounded">
+                      <div className="font-semibold">SME</div>
+                      <div>sme@example.com</div>
+                      <div>password</div>
+                    </div>
+                    <div className="p-2 bg-emerald-50 rounded">
+                      <div className="font-semibold">University SPOC</div>
+                      <div>university@example.com</div>
                       <div>password</div>
                     </div>
                   </div>
@@ -127,10 +144,10 @@ const Login: React.FC = () => {
                 <div className="space-y-4">
                   <h3 className="font-medium">Login Help</h3>
                   <p className="text-sm text-gray-500">
-                    If you're a student, your login details should have been provided by your college placement officer.
+                    If you're a candidate, your login details should have been provided by your college placement officer.
                   </p>
                   <p className="text-sm text-gray-500">
-                    If you're from HR, please contact the system administrator to get your login credentials.
+                    For recruiters, SMEs, and administrators, please contact the system administrator to get your login credentials.
                   </p>
                   <div className="pt-2">
                     <Button variant="outline" className="w-full" onClick={() => window.location.href = 'mailto:support@campushire.com'}>
