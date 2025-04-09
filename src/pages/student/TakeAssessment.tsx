@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -91,6 +92,13 @@ const mockAssessment = {
   ]
 };
 
+// Helper function to format time in MM:SS format
+const formatTime = (seconds: number): string => {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+};
+
 const TakeAssessment: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -111,6 +119,10 @@ const TakeAssessment: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [assessmentStarted, setAssessmentStarted] = useState(false);
   
+  // Get current section and question based on state
+  const currentSectionData = mockAssessment.sections[currentSection];
+  const currentQuestionData = currentSectionData?.questions[currentQuestion];
+
   useEffect(() => {
     if (!assessmentStarted) return;
     
@@ -228,7 +240,7 @@ const TakeAssessment: React.FC = () => {
   };
   
   const navigateToNextQuestion = () => {
-    if (currentQuestion < section.questions.length - 1) {
+    if (currentQuestion < currentSectionData.questions.length - 1) {
       setCurrentQuestion(currentQuestion + 1);
     } else if (currentSection < mockAssessment.sections.length - 1) {
       setCurrentSection(currentSection + 1);
@@ -296,8 +308,7 @@ const TakeAssessment: React.FC = () => {
   if (showSystemCheck) {
     return (
       <SystemCheckDialog 
-        open={showSystemCheck} 
-        onOpenChange={setShowSystemCheck} 
+        open={showSystemCheck}
         onComplete={handleSystemCheckComplete}
       />
     );
@@ -346,7 +357,7 @@ const TakeAssessment: React.FC = () => {
         <div className="flex justify-between items-center">
           <div>
             <h1 className="font-bold text-lg">{mockAssessment.title}</h1>
-            <p className="text-sm text-emerald-100">Section: {section?.name}</p>
+            <p className="text-sm text-emerald-100">Section: {currentSectionData?.name}</p>
           </div>
           <div className="flex items-center gap-4">
             <div className="flex flex-col items-center">
@@ -376,7 +387,7 @@ const TakeAssessment: React.FC = () => {
             <div className="flex justify-between items-center">
               <div>
                 <CardTitle>Question {getQuestionIndex()} of {getTotalQuestions()}</CardTitle>
-                <CardDescription>{section?.name}</CardDescription>
+                <CardDescription>{currentSectionData?.name}</CardDescription>
               </div>
               {warningCount > 0 && (
                 <div className="flex items-center text-red-600">
@@ -388,13 +399,13 @@ const TakeAssessment: React.FC = () => {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
-              <h3 className="text-lg font-medium">{question?.text}</h3>
+              <h3 className="text-lg font-medium">{currentQuestionData?.text}</h3>
               <RadioGroup 
-                value={userAnswers[question?.id]?.toString()}
-                onValueChange={(value) => handleAnswerSelect(question?.id, parseInt(value))}
+                value={userAnswers[currentQuestionData?.id]?.toString()}
+                onValueChange={(value) => handleAnswerSelect(currentQuestionData?.id, parseInt(value))}
               >
                 <div className="space-y-3">
-                  {question?.options.map((option, idx) => (
+                  {currentQuestionData?.options.map((option, idx) => (
                     <div 
                       key={idx}
                       className="flex items-center space-x-2 border p-3 rounded-md hover:bg-slate-50"
@@ -417,7 +428,7 @@ const TakeAssessment: React.FC = () => {
             </Button>
             <div className="flex gap-2">
               {(currentSection === mockAssessment.sections.length - 1 && 
-                currentQuestion === section.questions.length - 1) ? (
+                currentQuestion === currentSectionData.questions.length - 1) ? (
                 <Button onClick={handleSubmit}>
                   Submit Assessment
                 </Button>
