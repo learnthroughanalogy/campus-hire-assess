@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
@@ -13,16 +12,16 @@ import { User, Mail, Key, Shield, Bell } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 
 const UserProfile: React.FC = () => {
-  const { user, isHR } = useAuth();
+  const { user, isRecruiter } = useAuth();
   const { toast } = useToast();
   
   const [userData, setUserData] = useState({
     name: user?.name || '',
     email: user?.email || '',
     phone: '555-123-4567',
-    college: isHR ? 'HR Department' : 'Tech University',
-    department: isHR ? 'Recruitment' : 'Computer Science',
-    year: isHR ? 'N/A' : '4th Year',
+    college: isRecruiter ? 'HR Department' : 'Tech University',
+    department: isRecruiter ? 'Recruitment' : 'Computer Science',
+    year: isRecruiter ? 'N/A' : '4th Year',
   });
   
   const [passwords, setPasswords] = useState({
@@ -121,7 +120,7 @@ const UserProfile: React.FC = () => {
                   <div>
                     <h3 className="font-medium">{user?.name}</h3>
                     <p className="text-sm text-muted-foreground">
-                      {user?.role === 'hr' ? 'HR Manager' : 'Student'}
+                      {user?.role === 'recruiter' || user?.role === 'hr' ? 'HR Manager' : 'Student'}
                     </p>
                   </div>
                 </div>
@@ -156,7 +155,7 @@ const UserProfile: React.FC = () => {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="college">{isHR ? 'Department' : 'College/University'}</Label>
+                      <Label htmlFor="college">{isRecruiter ? 'Department' : 'College/University'}</Label>
                       <Input 
                         id="college" 
                         value={userData.college}
@@ -164,14 +163,14 @@ const UserProfile: React.FC = () => {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="department">{isHR ? 'Role' : 'Department/Major'}</Label>
+                      <Label htmlFor="department">{isRecruiter ? 'Role' : 'Department/Major'}</Label>
                       <Input 
                         id="department" 
                         value={userData.department}
                         onChange={(e) => setUserData({...userData, department: e.target.value})}
                       />
                     </div>
-                    {!isHR && (
+                    {!isRecruiter && (
                       <div className="space-y-2">
                         <Label htmlFor="year">Year/Semester</Label>
                         <Input 

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
-export type UserRole = 'administrator' | 'recruiter' | 'candidate' | 'sme' | 'university_spoc' | null;
+export type UserRole = 'administrator' | 'recruiter' | 'candidate' | 'sme' | 'university_spoc' | 'hr' | 'student' | null;
 
 interface User {
   id: string;
@@ -41,8 +41,8 @@ const MOCK_USERS = [
   { id: '5', name: 'University SPOC', email: 'university@example.com', password: 'password', role: 'university_spoc' as UserRole },
   
   // Keep backward compatibility for existing users
-  { id: '6', name: 'HR Manager', email: 'hr@example.com', password: 'password', role: 'recruiter' as UserRole },
-  { id: '7', name: 'John Student', email: 'student@example.com', password: 'password', role: 'candidate' as UserRole },
+  { id: '6', name: 'HR Manager', email: 'hr@example.com', password: 'password', role: 'hr' as UserRole },
+  { id: '7', name: 'John Student', email: 'student@example.com', password: 'password', role: 'student' as UserRole },
 ];
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {

@@ -18,7 +18,7 @@ interface AppLayoutProps {
 }
 
 const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
-  const { user, logout, isHR, isStudent } = useAuth();
+  const { user, logout, isRecruiter, isCandidate } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -66,7 +66,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                   <span className="hidden sm:inline text-emerald-900">Dashboard</span>
                 </Link>
                 
-                {isHR && (
+                {isRecruiter && (
                   <>
                     <Link
                       to="/students"
@@ -92,7 +92,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                   </>
                 )}
                 
-                {isStudent && (
+                {isCandidate && (
                   <>
                     <Link
                       to="/my-assessments"
