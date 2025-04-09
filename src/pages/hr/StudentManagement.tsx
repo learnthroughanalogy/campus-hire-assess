@@ -1,12 +1,17 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, UserPlus, Download, Mail, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { Search, UserPlus, Download, Mail, CheckCircle2, XCircle, Clock, FileUp, Eye, Edit } from 'lucide-react';
+import StudentImportDialog from '@/components/dialogs/StudentImportDialog';
+import StudentViewDialog from '@/components/dialogs/StudentViewDialog';
+import StudentEditDialog from '@/components/dialogs/StudentEditDialog';
+import { useToast } from '@/hooks/use-toast';
+import * as XLSX from 'xlsx';
 
 // Mock student data
 const students = [
@@ -63,7 +68,13 @@ const students = [
 ];
 
 const StudentManagement: React.FC = () => {
-  const [searchQuery, setSearchQuery] = React.useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [selectedStudent, setSelectedStudent] = useState<typeof students[0] | null>(null);
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  
+  const { toast } = useToast();
   
   const filteredStudents = students.filter(student => 
     student.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -85,6 +96,34 @@ const StudentManagement: React.FC = () => {
     }
   };
 
+  const handleViewStudent = (student: typeof students[0]) => {
+    setSelectedStudent(student);
+    setViewDialogOpen(true);
+  };
+
+  const handleEditStudent = (student: typeof students[0]) => {
+    setSelectedStudent(student);
+    setEditDialogOpen(true);
+  };
+
+  const handleEmailStudent = (email: string) => {
+    window.location.href = `mailto:${email}`;
+  };
+
+  const handleExportStudents = () => {
+    const worksheet = XLSX.utils.json_to_sheet(filteredStudents);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Students");
+    
+    // Generate file and trigger download
+    XLSX.writeFile(workbook, "student_data.xlsx");
+    
+    toast({
+      title: "Export Successful",
+      description: "Student data has been exported to Excel",
+    });
+  };
+
   return (
     <AppLayout>
       <div className="space-y-6">
@@ -96,11 +135,11 @@ const StudentManagement: React.FC = () => {
             </p>
           </div>
           <div className="flex gap-2">
-            <Button>
+            <Button onClick={() => setImportDialogOpen(true)}>
               <UserPlus className="mr-2 h-4 w-4" />
               Add Student
             </Button>
-            <Button variant="outline">
+            <Button variant="outline" onClick={handleExportStudents}>
               <Download className="mr-2 h-4 w-4" />
               Export
             </Button>
@@ -157,13 +196,25 @@ const StudentManagement: React.FC = () => {
                           <TableCell>{getStatusBadge(student.status)}</TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
-                              <Button size="sm" variant="outline">
+                              <Button 
+                                size="sm" 
+                                variant="outline" 
+                                onClick={() => handleEmailStudent(student.email)}
+                              >
                                 <Mail className="h-4 w-4" />
                               </Button>
-                              <Button size="sm" variant="outline">
-                                Edit
+                              <Button 
+                                size="sm" 
+                                variant="outline"
+                                onClick={() => handleEditStudent(student)}
+                              >
+                                <Edit className="h-4 w-4" />
                               </Button>
-                              <Button size="sm">
+                              <Button 
+                                size="sm"
+                                onClick={() => handleViewStudent(student)}
+                              >
+                                <Eye className="h-4 w-4" />
                                 View
                               </Button>
                             </div>
@@ -213,13 +264,25 @@ const StudentManagement: React.FC = () => {
                           <TableCell>{student.major}</TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
-                              <Button size="sm" variant="outline">
+                              <Button 
+                                size="sm" 
+                                variant="outline"
+                                onClick={() => handleEmailStudent(student.email)}
+                              >
                                 <Mail className="h-4 w-4" />
                               </Button>
-                              <Button size="sm" variant="outline">
-                                Edit
+                              <Button 
+                                size="sm" 
+                                variant="outline"
+                                onClick={() => handleEditStudent(student)}
+                              >
+                                <Edit className="h-4 w-4" />
                               </Button>
-                              <Button size="sm">
+                              <Button 
+                                size="sm"
+                                onClick={() => handleViewStudent(student)}
+                              >
+                                <Eye className="h-4 w-4" />
                                 View
                               </Button>
                             </div>
@@ -235,6 +298,23 @@ const StudentManagement: React.FC = () => {
           {/* Similar content for other tabs, omitted for brevity */}
         </Tabs>
       </div>
+      
+      <StudentImportDialog 
+        open={importDialogOpen} 
+        onOpenChange={setImportDialogOpen} 
+      />
+      
+      <StudentViewDialog 
+        open={viewDialogOpen}
+        onOpenChange={setViewDialogOpen}
+        student={selectedStudent}
+      />
+      
+      <StudentEditDialog
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        student={selectedStudent}
+      />
     </AppLayout>
   );
 };
