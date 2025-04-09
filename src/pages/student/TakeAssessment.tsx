@@ -8,6 +8,8 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { AlertCircle, Clock, ChevronLeft, ChevronRight, Flag } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
+import SystemCheckDialog from '@/components/assessment/SystemCheckDialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 // Mock assessment with sections and questions
 const mockAssessment = {
@@ -96,6 +98,14 @@ const TakeAssessment: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   
+  // System check and proctoring states
+  const [showSystemCheck, setShowSystemCheck] = useState(true);
+  const [studentImage, setStudentImage] = useState<string | undefined>();
+  const [videoAllowed, setVideoAllowed] = useState(false);
+  const [showWarningDialog, setShowWarningDialog] = useState(false);
+  const [warningMessage, setWarningMessage] = useState('');
+  
+  // Assessment states
   const [currentSection, setCurrentSection] = useState(0);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [userAnswers, setUserAnswers] = useState<Record<string, number>>({});
@@ -103,9 +113,12 @@ const TakeAssessment: React.FC = () => {
   const [sectionTimeLeft, setSectionTimeLeft] = useState(mockAssessment.sections[0].timeLimit * 60);
   const [warningCount, setWarningCount] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [assessmentStarted, setAssessmentStarted] = useState(false);
   
   // Timer for the overall assessment
   useEffect(() => {
+    if (!assessmentStarted) return;
+    
     const timer = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
@@ -118,10 +131,12 @@ const TakeAssessment: React.FC = () => {
     }, 1000);
     
     return () => clearInterval(timer);
-  }, []);
+  }, [assessmentStarted]);
   
   // Timer for the current section
   useEffect(() => {
+    if (!assessmentStarted) return;
+    
     const sectionTimer = setInterval(() => {
       setSectionTimeLeft(prev => {
         if (prev <= 1) {
@@ -145,31 +160,15 @@ const TakeAssessment: React.FC = () => {
     }, 1000);
     
     return () => clearInterval(sectionTimer);
-  }, [currentSection]);
+  }, [currentSection, assessmentStarted]);
   
   // Handle window blur events for proctoring
   useEffect(() => {
+    if (!assessmentStarted) return;
+    
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        setWarningCount(count => {
-          const newCount = count + 1;
-          if (newCount >= 3) {
-            toast({
-              title: "Flagged for suspicious activity",
-              description: "Your test has been terminated due to multiple violations.",
-              variant: "destructive"
-            });
-            setTimeout(() => navigate('/my-assessments'), 2000);
-            return newCount;
-          }
-          
-          toast({
-            title: "Warning!",
-            description: `You left the test window. Warning ${newCount}/3`,
-            variant: "destructive"
-          });
-          return newCount;
-        });
+        handleSuspiciousActivity('You left the test window');
       }
     };
     
@@ -177,7 +176,40 @@ const TakeAssessment: React.FC = () => {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, []);
+  }, [assessmentStarted]);
+  
+  // Detect multiple screen detection (if available in browser)
+  useEffect(() => {
+    if (!assessmentStarted || !videoAllowed) return;
+    
+    // This is a simplified version - in a real app, this would be more sophisticated
+    const detectMultipleScreens = () => {
+      if (window.screen && window.screen.availWidth > window.innerWidth * 1.5) {
+        handleSuspiciousActivity('Multiple screens detected');
+      }
+    };
+    
+    const interval = setInterval(detectMultipleScreens, 10000); // Check every 10 seconds
+    
+    return () => clearInterval(interval);
+  }, [assessmentStarted, videoAllowed]);
+  
+  // Handle suspicious activity detection
+  const handleSuspiciousActivity = (reason: string) => {
+    const newCount = warningCount + 1;
+    setWarningCount(newCount);
+    setWarningMessage(reason);
+    setShowWarningDialog(true);
+    
+    if (newCount >= 3) {
+      toast({
+        title: "Assessment terminated",
+        description: "Your test has been terminated due to multiple violations.",
+        variant: "destructive"
+      });
+      setTimeout(() => navigate('/my-assessments'), 2000);
+    }
+  };
   
   const section = mockAssessment.sections[currentSection];
   const question = section?.questions[currentQuestion];
@@ -187,6 +219,23 @@ const TakeAssessment: React.FC = () => {
     const minutes = Math.floor(timeInSeconds / 60);
     const seconds = timeInSeconds % 60;
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
+  
+  // System check completion handler
+  const handleSystemCheckComplete = (success: boolean, capturedImage?: string) => {
+    if (success) {
+      setStudentImage(capturedImage);
+      setShowSystemCheck(false);
+      setAssessmentStarted(true);
+      setVideoAllowed(true);
+      
+      toast({
+        title: "Assessment started",
+        description: "Your system check is complete. You can now begin the assessment.",
+      });
+    } else {
+      navigate('/my-assessments');
+    }
   };
   
   const handleAnswerSelect = (questionId: string, answerIndex: number) => {
@@ -267,6 +316,16 @@ const TakeAssessment: React.FC = () => {
     return mockAssessment.sections.reduce((sum, section) => sum + section.questions.length, 0);
   };
 
+  if (showSystemCheck) {
+    return (
+      <SystemCheckDialog 
+        open={showSystemCheck} 
+        onOpenChange={setShowSystemCheck} 
+        onComplete={handleSystemCheckComplete}
+      />
+    );
+  }
+
   if (isSubmitting) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-slate-50">
@@ -281,6 +340,32 @@ const TakeAssessment: React.FC = () => {
 
   return (
     <div className="h-screen flex flex-col bg-slate-50">
+      {/* Warning Dialog */}
+      <AlertDialog open={showWarningDialog} onOpenChange={setShowWarningDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              <div className="flex items-center text-red-600">
+                <AlertCircle className="mr-2 h-5 w-5" />
+                Warning: Suspicious Activity
+              </div>
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {warningMessage}. This incident has been recorded.
+              <div className="mt-2 font-semibold">Warning {warningCount} of 3</div>
+              <div className="text-sm text-muted-foreground mt-1">
+                Your assessment will be terminated after 3 warnings.
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction>
+              I understand
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Header */}
       <header className="bg-emerald-600 text-white py-4 px-6">
         <div className="flex justify-between items-center">
