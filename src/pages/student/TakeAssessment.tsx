@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -6,13 +5,16 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Progress } from '@/components/ui/progress';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
-import { AlertCircle, Clock, ChevronLeft, ChevronRight, Flag, Camera, Eye, Monitor } from 'lucide-react';
+import { 
+  AlertCircle, Clock, ChevronLeft, ChevronRight, Flag, Camera, Eye, 
+  Monitor, Shield, Maximize, Smartphone, Wifi, AlertTriangle 
+} from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import SystemCheckDialog from '@/components/assessment/SystemCheckDialog';
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { SecuritySetting, SuspiciousActivity } from '@/models/assessment';
 
-// Mock data enhanced with proctoring settings
 const mockAssessment = {
   id: '1',
   title: 'Data Structures & Algorithms',
@@ -25,6 +27,14 @@ const mockAssessment = {
     takeRandomSnapshots: true,
     snapshotInterval: 30, // seconds
     aiProctoring: true
+  },
+  security: {
+    enforceFullscreen: true,
+    preventScreenshots: true,
+    blockMultipleSessions: true,
+    allowedIPRanges: ['192.168.0.0/24'],
+    requireDeviceVerification: true,
+    maxWarningsBeforeTermination: 3
   },
   sections: [
     {
@@ -103,11 +113,39 @@ const mockAssessment = {
   ]
 };
 
-// Helper function to format time in MM:SS format
 const formatTime = (seconds: number): string => {
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
   return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+};
+
+const getBrowserInfo = (): string => {
+  return `${navigator.userAgent}`;
+};
+
+const getScreenResolution = (): string => {
+  return `${window.screen.width}x${window.screen.height}`;
+};
+
+const generateDeviceId = (): string => {
+  const nav = navigator as any;
+  const screenProps = [
+    nav.userAgent,
+    nav.language,
+    nav.hardwareConcurrency,
+    nav.deviceMemory,
+    window.screen.colorDepth,
+    window.screen.width,
+    window.screen.height
+  ].join('_');
+  
+  let hash = 0;
+  for (let i = 0; i < screenProps.length; i++) {
+    const char = screenProps.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return hash.toString(16);
 };
 
 const TakeAssessment: React.FC = () => {
@@ -118,6 +156,7 @@ const TakeAssessment: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const snapshotIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const fullscreenIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
   const [showSystemCheck, setShowSystemCheck] = useState(true);
   const [studentImage, setStudentImage] = useState<string | undefined>();
@@ -125,6 +164,7 @@ const TakeAssessment: React.FC = () => {
   const [showWarningDialog, setShowWarningDialog] = useState(false);
   const [warningMessage, setWarningMessage] = useState('');
   const [showProctorPanel, setShowProctorPanel] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   
   const [currentSection, setCurrentSection] = useState(0);
   const [currentQuestion, setCurrentQuestion] = useState(0);
@@ -134,43 +174,74 @@ const TakeAssessment: React.FC = () => {
   const [warningCount, setWarningCount] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [assessmentStarted, setAssessmentStarted] = useState(false);
-  const [suspiciousActivities, setSuspiciousActivities] = useState<{
-    timestamp: Date;
-    type: string;
-    details: string;
-    snapshot?: string;
-  }[]>([]);
+  const [suspiciousActivities, setSuspiciousActivities] = useState<SuspiciousActivity[]>([]);
   const [lastActiveTime, setLastActiveTime] = useState<Date>(new Date());
+  const [navigationEvents, setNavigationEvents] = useState<{
+    timestamp: Date;
+    action: string;
+    details: string;
+  }[]>([]);
+  const [deviceInfo, setDeviceInfo] = useState({
+    deviceId: '',
+    browserInfo: '',
+    ipAddress: '0.0.0.0',
+    screenResolution: '',
+    fullscreenExits: 0
+  });
+  const [showSecurityBanner, setShowSecurityBanner] = useState(false);
   
-  // Get current section and question based on state
   const currentSectionData = mockAssessment.sections[currentSection];
   const currentQuestionData = currentSectionData?.questions[currentQuestion];
 
-  // Track assessment progress
+  useEffect(() => {
+    setDeviceInfo({
+      deviceId: generateDeviceId(),
+      browserInfo: getBrowserInfo(),
+      ipAddress: '0.0.0.0',
+      screenResolution: getScreenResolution(),
+      fullscreenExits: 0
+    });
+    
+    fetch('https://api.ipify.org?format=json')
+      .then(response => response.json())
+      .then(data => {
+        setDeviceInfo(prev => ({
+          ...prev,
+          ipAddress: data.ip
+        }));
+      })
+      .catch(err => {
+        console.error('Failed to get IP address:', err);
+      });
+  }, []);
+
   useEffect(() => {
     if (!assessmentStarted) return;
 
-    // Send progress update to server every 5 seconds
     const progressInterval = setInterval(() => {
       const progress = {
         assessmentId: mockAssessment.id,
-        candidateId: 'current-user-id', // This would come from auth context
+        candidateId: 'current-user-id',
         currentSection,
         currentQuestion,
         timeRemaining: timeLeft,
         completed: false,
-        suspiciousActivities: suspiciousActivities.length
+        suspiciousActivities: suspiciousActivities.length,
+        sessionData: {
+          ...deviceInfo,
+          startTime: new Date(),
+          lastActiveTime,
+          navigationEvents
+        }
       };
       
-      // In a real app, you would send this to your backend
       console.log('Assessment progress update:', progress);
       
     }, 5000);
     
     return () => clearInterval(progressInterval);
-  }, [assessmentStarted, currentSection, currentQuestion, timeLeft, suspiciousActivities]);
+  }, [assessmentStarted, currentSection, currentQuestion, timeLeft, suspiciousActivities, deviceInfo, lastActiveTime, navigationEvents]);
 
-  // Main timer for the assessment
   useEffect(() => {
     if (!assessmentStarted) return;
     
@@ -188,7 +259,6 @@ const TakeAssessment: React.FC = () => {
     return () => clearInterval(timer);
   }, [assessmentStarted]);
   
-  // Timer for each section
   useEffect(() => {
     if (!assessmentStarted) return;
     
@@ -216,13 +286,62 @@ const TakeAssessment: React.FC = () => {
     return () => clearInterval(sectionTimer);
   }, [currentSection, assessmentStarted]);
   
-  // Detect tab switching / window visibility
+  useEffect(() => {
+    if (!assessmentStarted || !mockAssessment.security?.enforceFullscreen) return;
+
+    const checkFullscreen = () => {
+      const isDocumentFullscreen = document.fullscreenElement !== null;
+      
+      if (isFullscreen && !isDocumentFullscreen) {
+        handleSuspiciousActivity('fullscreen_exit', 'Fullscreen mode exited', undefined, 'medium');
+        setDeviceInfo(prev => ({
+          ...prev,
+          fullscreenExits: prev.fullscreenExits + 1
+        }));
+        setShowSecurityBanner(true);
+        
+        setTimeout(() => {
+          requestFullscreen();
+          setShowSecurityBanner(false);
+        }, 5000);
+      }
+      
+      setIsFullscreen(isDocumentFullscreen);
+    };
+
+    const requestFullscreen = () => {
+      try {
+        const docEl = document.documentElement;
+        if (docEl.requestFullscreen) {
+          docEl.requestFullscreen();
+        }
+      } catch (err) {
+        console.error('Failed to enter fullscreen:', err);
+      }
+    };
+
+    if (!isFullscreen) {
+      requestFullscreen();
+    }
+
+    fullscreenIntervalRef.current = setInterval(checkFullscreen, 1000);
+    
+    document.addEventListener('fullscreenchange', checkFullscreen);
+    
+    return () => {
+      if (fullscreenIntervalRef.current) {
+        clearInterval(fullscreenIntervalRef.current);
+      }
+      document.removeEventListener('fullscreenchange', checkFullscreen);
+    };
+  }, [assessmentStarted, isFullscreen, mockAssessment.security]);
+  
   useEffect(() => {
     if (!assessmentStarted) return;
     
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        handleSuspiciousActivity('tab_switch', 'You left the test window');
+        handleSuspiciousActivity('tab_switch', 'You left the test window', undefined, 'high');
       }
     };
     
@@ -231,14 +350,55 @@ const TakeAssessment: React.FC = () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [assessmentStarted]);
+
+  useEffect(() => {
+    if (!assessmentStarted || !mockAssessment.security?.preventScreenshots) return;
+    
+    const preventCopyPaste = (e: ClipboardEvent) => {
+      e.preventDefault();
+      handleSuspiciousActivity('screenshot_attempt', 'Copy attempt detected', undefined, 'low');
+      return false;
+    };
+    
+    const preventScreenCapture = (e: KeyboardEvent) => {
+      if (
+        e.key === 'PrintScreen' || 
+        (e.ctrlKey && e.key === 'p') || 
+        (e.metaKey && e.shiftKey && e.key === '4') ||
+        (e.metaKey && e.shiftKey && e.key === '3')
+      ) {
+        e.preventDefault();
+        handleSuspiciousActivity('screenshot_attempt', 'Screenshot attempt detected', undefined, 'medium');
+        return false;
+      }
+    };
+    
+    const preventRightClick = (e: MouseEvent) => {
+      e.preventDefault();
+      return false;
+    };
+    
+    document.addEventListener('copy', preventCopyPaste);
+    document.addEventListener('paste', preventCopyPaste);
+    document.addEventListener('cut', preventCopyPaste);
+    document.addEventListener('keydown', preventScreenCapture);
+    document.addEventListener('contextmenu', preventRightClick);
+    
+    return () => {
+      document.removeEventListener('copy', preventCopyPaste);
+      document.removeEventListener('paste', preventCopyPaste);
+      document.removeEventListener('cut', preventCopyPaste);
+      document.removeEventListener('keydown', preventScreenCapture);
+      document.removeEventListener('contextmenu', preventRightClick);
+    };
+  }, [assessmentStarted, mockAssessment.security]);
   
-  // Detect screen sharing / multiple monitors
   useEffect(() => {
     if (!assessmentStarted || !videoAllowed) return;
     
     const detectMultipleScreens = () => {
       if (window.screen && window.screen.availWidth > window.innerWidth * 1.5) {
-        handleSuspiciousActivity('screen_share', 'Multiple screens detected');
+        handleSuspiciousActivity('screen_share', 'Multiple screens detected', undefined, 'high');
       }
     };
     
@@ -247,7 +407,6 @@ const TakeAssessment: React.FC = () => {
     return () => clearInterval(interval);
   }, [assessmentStarted, videoAllowed]);
 
-  // Inactivity detection
   useEffect(() => {
     if (!assessmentStarted) return;
 
@@ -255,17 +414,15 @@ const TakeAssessment: React.FC = () => {
       setLastActiveTime(new Date());
     };
 
-    // Events to track user activity
     const activityEvents = ['mousemove', 'keypress', 'scroll', 'click'];
     activityEvents.forEach(event => {
       window.addEventListener(event, handleActivity);
     });
 
-    // Check for inactivity every 10 seconds
     const inactivityCheck = setInterval(() => {
       const inactiveTime = new Date().getTime() - lastActiveTime.getTime();
-      if (inactiveTime > 30000) { // 30 seconds of inactivity
-        handleSuspiciousActivity('inactivity', `No activity detected for ${Math.floor(inactiveTime / 1000)} seconds`);
+      if (inactiveTime > 30000) {
+        handleSuspiciousActivity('inactivity', `No activity detected for ${Math.floor(inactiveTime / 1000)} seconds`, undefined, 'low');
       }
     }, 10000);
 
@@ -277,7 +434,6 @@ const TakeAssessment: React.FC = () => {
     };
   }, [assessmentStarted, lastActiveTime]);
   
-  // Setup webcam monitoring if allowed
   useEffect(() => {
     if (!assessmentStarted || !videoAllowed) return;
     
@@ -294,7 +450,6 @@ const TakeAssessment: React.FC = () => {
           videoRef.current.srcObject = stream;
         }
         
-        // Take snapshots at random intervals
         if (mockAssessment.proctoring?.takeRandomSnapshots) {
           snapshotIntervalRef.current = setInterval(() => {
             takeSnapshot();
@@ -328,7 +483,6 @@ const TakeAssessment: React.FC = () => {
     const context = canvasRef.current.getContext('2d');
     if (!context) return;
     
-    // Draw the video frame to the canvas
     context.drawImage(
       videoRef.current,
       0, 0,
@@ -336,41 +490,38 @@ const TakeAssessment: React.FC = () => {
       canvasRef.current.height
     );
     
-    // Convert canvas to base64 image
     const snapshot = canvasRef.current.toDataURL('image/jpeg', 0.5);
     
-    // Here you would typically send this snapshot to your backend
-    // For demo purposes, we'll just log it
     console.log('Snapshot taken');
     
-    // In a real implementation, you might want to use face detection
-    // to check if the candidate is still present, if there are multiple 
-    // people in the frame, etc.
     simulateFaceDetection(snapshot);
   };
   
-  // This is a mock function that simulates face detection
-  // In a real app, you would use a proper face detection library or API
   const simulateFaceDetection = (snapshot: string) => {
-    // Randomly simulate issues for demonstration
     const simulationValue = Math.random();
     
-    if (simulationValue < 0.05) { // 5% chance to detect no face
-      handleSuspiciousActivity('no_face', 'No face detected in the webcam', snapshot);
-    } else if (simulationValue < 0.08) { // 3% chance to detect multiple faces
-      handleSuspiciousActivity('multiple_faces', 'Multiple faces detected in the webcam', snapshot);
-    } else if (simulationValue < 0.10) { // 2% chance to detect unknown face
-      handleSuspiciousActivity('unknown_face', 'Unrecognized face detected in the webcam', snapshot);
+    if (simulationValue < 0.05) {
+      handleSuspiciousActivity('no_face', 'No face detected in the webcam', snapshot, 'medium');
+    } else if (simulationValue < 0.08) {
+      handleSuspiciousActivity('multiple_faces', 'Multiple faces detected in the webcam', snapshot, 'high');
+    } else if (simulationValue < 0.10) {
+      handleSuspiciousActivity('unknown_face', 'Unrecognized face detected in the webcam', snapshot, 'high');
     }
   };
   
-  const handleSuspiciousActivity = (type: string, reason: string, snapshot?: string) => {
+  const handleSuspiciousActivity = (
+    type: string, 
+    reason: string, 
+    snapshot?: string, 
+    severity: 'low' | 'medium' | 'high' = 'medium'
+  ) => {
     const newActivity = {
       timestamp: new Date(),
       type,
       details: reason,
-      snapshot
-    };
+      snapshot,
+      severity
+    } as SuspiciousActivity;
     
     setSuspiciousActivities(prev => [...prev, newActivity]);
     
@@ -379,7 +530,8 @@ const TakeAssessment: React.FC = () => {
     setWarningMessage(reason);
     setShowWarningDialog(true);
     
-    if (newCount >= 3) {
+    const maxWarnings = mockAssessment.security?.maxWarningsBeforeTermination || 3;
+    if (newCount >= maxWarnings) {
       toast({
         title: "Assessment terminated",
         description: "Your test has been terminated due to multiple violations.",
@@ -400,6 +552,8 @@ const TakeAssessment: React.FC = () => {
         title: "Assessment started",
         description: "Your system check is complete. You can now begin the assessment.",
       });
+      
+      logNavigationEvent('assessment_start', 'Assessment started with system check complete');
     } else {
       toast({
         title: "System check required",
@@ -409,39 +563,59 @@ const TakeAssessment: React.FC = () => {
     }
   };
   
+  const logNavigationEvent = (action: string, details: string) => {
+    const newEvent = {
+      timestamp: new Date(),
+      action,
+      details
+    };
+    
+    setNavigationEvents(prev => [...prev, newEvent]);
+  };
+  
   const handleAnswerSelect = (questionId: string, answerIndex: number) => {
     setUserAnswers(prev => ({
       ...prev,
       [questionId]: answerIndex
     }));
+    
+    logNavigationEvent('answer_change', `Answer selected for question ${questionId}`);
   };
   
   const navigateToNextQuestion = () => {
     if (currentQuestion < currentSectionData.questions.length - 1) {
       setCurrentQuestion(currentQuestion + 1);
+      logNavigationEvent('question_view', `Navigated to question ${currentQuestion + 1}`);
     } else if (currentSection < mockAssessment.sections.length - 1) {
       setCurrentSection(currentSection + 1);
       setCurrentQuestion(0);
       setSectionTimeLeft(mockAssessment.sections[currentSection + 1].timeLimit * 60);
+      logNavigationEvent('section_change', `Changed to section ${currentSection + 1}`);
     }
   };
   
   const navigateToPrevQuestion = () => {
     if (currentQuestion > 0) {
       setCurrentQuestion(currentQuestion - 1);
+      logNavigationEvent('question_view', `Navigated to question ${currentQuestion - 1}`);
     } else if (currentSection > 0) {
       setCurrentSection(currentSection - 1);
       const prevSection = mockAssessment.sections[currentSection - 1];
       setCurrentQuestion(prevSection.questions.length - 1);
+      logNavigationEvent('section_change', `Changed to section ${currentSection - 1}`);
     }
   };
   
   const handleSubmit = () => {
     setIsSubmitting(true);
+    logNavigationEvent('assessment_submit', 'Assessment submitted');
     
-    // In a real app, here we would submit both the answers and all proctoring data
     console.log('Submitting answers:', userAnswers);
     console.log('Submitting proctoring data:', suspiciousActivities);
+    console.log('Submitting session data:', {
+      deviceInfo,
+      navigationEvents
+    });
     
     setTimeout(() => {
       toast({
@@ -510,11 +684,17 @@ const TakeAssessment: React.FC = () => {
 
   return (
     <div className="h-screen flex flex-col bg-slate-50">
-      {/* Hidden video and canvas for proctoring */}
       <div className="hidden">
         <video ref={videoRef} autoPlay muted playsInline></video>
         <canvas ref={canvasRef} width="640" height="480"></canvas>
       </div>
+      
+      {showSecurityBanner && (
+        <div className="bg-red-600 text-white p-3 text-center flex items-center justify-center gap-2">
+          <AlertCircle className="h-5 w-5" />
+          <span>Security violation detected! Please return to fullscreen mode to continue your assessment.</span>
+        </div>
+      )}
       
       <AlertDialog open={showWarningDialog} onOpenChange={setShowWarningDialog}>
         <AlertDialogContent>
@@ -527,9 +707,9 @@ const TakeAssessment: React.FC = () => {
             </AlertDialogTitle>
             <AlertDialogDescription>
               {warningMessage}. This incident has been recorded.
-              <div className="mt-2 font-semibold">Warning {warningCount} of 3</div>
+              <div className="mt-2 font-semibold">Warning {warningCount} of {mockAssessment.security?.maxWarningsBeforeTermination || 3}</div>
               <div className="text-sm text-muted-foreground mt-1">
-                Your assessment will be terminated after 3 warnings.
+                Your assessment will be terminated after {mockAssessment.security?.maxWarningsBeforeTermination || 3} warnings.
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -549,7 +729,7 @@ const TakeAssessment: React.FC = () => {
               Real-time monitoring data for this assessment
             </SheetDescription>
           </SheetHeader>
-          <div className="py-4">
+          <div className="py-4 h-[calc(100vh-120px)] overflow-y-auto">
             <div className="space-y-4">
               <div className="p-4 border rounded-md bg-slate-50">
                 <h3 className="font-medium mb-2">Candidate Information</h3>
@@ -563,16 +743,49 @@ const TakeAssessment: React.FC = () => {
                 </div>
               </div>
               
+              <div className="p-4 border rounded-md bg-slate-50">
+                <h3 className="font-medium mb-2 flex items-center">
+                  <Shield className="h-4 w-4 mr-1 text-emerald-600" />
+                  Security Information
+                </h3>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>Device ID:</div>
+                  <div className="font-medium">{deviceInfo.deviceId}</div>
+                  <div>IP Address:</div>
+                  <div className="font-medium">{deviceInfo.ipAddress}</div>
+                  <div>Screen Resolution:</div>
+                  <div className="font-medium">{deviceInfo.screenResolution}</div>
+                  <div>Fullscreen Exits:</div>
+                  <div className="font-medium">{deviceInfo.fullscreenExits}</div>
+                </div>
+              </div>
+              
               <div>
-                <h3 className="font-medium mb-2">Suspicious Activity Log</h3>
+                <h3 className="font-medium mb-2 flex items-center">
+                  <AlertTriangle className="h-4 w-4 mr-1 text-amber-500" />
+                  Suspicious Activity Log
+                </h3>
                 {suspiciousActivities.length === 0 ? (
                   <div className="text-sm text-muted-foreground p-2">No suspicious activities recorded</div>
                 ) : (
                   <div className="space-y-3">
                     {suspiciousActivities.map((activity, index) => (
-                      <div key={index} className="border rounded-md p-3 text-sm">
+                      <div 
+                        key={index} 
+                        className={`border rounded-md p-3 text-sm ${
+                          activity.severity === 'high' ? 'border-red-300 bg-red-50' : 
+                          activity.severity === 'medium' ? 'border-amber-300 bg-amber-50' : 
+                          'border-blue-300 bg-blue-50'
+                        }`}
+                      >
                         <div className="flex justify-between items-center">
-                          <span className="font-medium text-red-600 capitalize">{activity.type.replace('_', ' ')}</span>
+                          <span className={`font-medium capitalize ${
+                            activity.severity === 'high' ? 'text-red-600' : 
+                            activity.severity === 'medium' ? 'text-amber-600' : 
+                            'text-blue-600'
+                          }`}>
+                            {activity.type.replace('_', ' ')}
+                          </span>
                           <span className="text-xs text-muted-foreground">
                             {activity.timestamp.toLocaleTimeString()}
                           </span>
@@ -589,6 +802,37 @@ const TakeAssessment: React.FC = () => {
                         )}
                       </div>
                     ))}
+                  </div>
+                )}
+              </div>
+              
+              <div>
+                <h3 className="font-medium mb-2 flex items-center">
+                  <Clock className="h-4 w-4 mr-1 text-blue-600" />
+                  Session Activity Log
+                </h3>
+                {navigationEvents.length === 0 ? (
+                  <div className="text-sm text-muted-foreground p-2">No activities recorded yet</div>
+                ) : (
+                  <div className="border rounded-md overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-100 text-left">
+                        <tr>
+                          <th className="p-2">Time</th>
+                          <th className="p-2">Action</th>
+                          <th className="p-2">Details</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {navigationEvents.map((event, index) => (
+                          <tr key={index} className="hover:bg-slate-50">
+                            <td className="p-2 text-xs">{event.timestamp.toLocaleTimeString()}</td>
+                            <td className="p-2 capitalize">{event.action.replace('_', ' ')}</td>
+                            <td className="p-2 text-muted-foreground text-xs">{event.details}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>
@@ -640,15 +884,29 @@ const TakeAssessment: React.FC = () => {
                 {warningCount > 0 && (
                   <div className="flex items-center text-red-600">
                     <AlertCircle className="h-4 w-4 mr-1" />
-                    <span className="text-sm font-medium">Warning: {warningCount}/3</span>
+                    <span className="text-sm font-medium">Warning: {warningCount}/{mockAssessment.security?.maxWarningsBeforeTermination || 3}</span>
                   </div>
                 )}
-                {videoAllowed && (
-                  <div className="flex items-center text-emerald-600">
-                    <Camera className="h-4 w-4 mr-1" />
-                    <span className="text-xs font-medium">Proctored</span>
-                  </div>
-                )}
+                <div className="flex space-x-1">
+                  {videoAllowed && (
+                    <div className="flex items-center text-emerald-600">
+                      <Camera className="h-4 w-4 mr-1" />
+                      <span className="text-xs font-medium">Webcam</span>
+                    </div>
+                  )}
+                  {isFullscreen && (
+                    <div className="flex items-center text-emerald-600">
+                      <Maximize className="h-4 w-4 mr-1" />
+                      <span className="text-xs font-medium">Fullscreen</span>
+                    </div>
+                  )}
+                  {deviceInfo.deviceId && (
+                    <div className="flex items-center text-emerald-600">
+                      <Smartphone className="h-4 w-4 mr-1" />
+                      <span className="text-xs font-medium">Verified</span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </CardHeader>
@@ -699,9 +957,19 @@ const TakeAssessment: React.FC = () => {
       
       <footer className="bg-white border-t py-3 px-6">
         <div className="flex justify-between items-center">
-          <div className="text-sm text-muted-foreground">
-            <Eye className="inline h-4 w-4 mr-1" />
-            Proctoring active • {mockAssessment.proctoring?.requireWebcam ? 'Webcam monitoring enabled' : 'Screen monitoring only'}
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="flex items-center">
+              <Eye className="inline h-4 w-4 mr-1" />
+              <span>Proctoring active</span>
+            </div>
+            <div className="flex items-center">
+              <Shield className="inline h-4 w-4 mr-1" />
+              <span>Security enabled</span>
+            </div>
+            <div className="flex items-center">
+              <Wifi className="inline h-4 w-4 mr-1" />
+              <span>IP: {deviceInfo.ipAddress}</span>
+            </div>
           </div>
           <Button 
             variant="outline" 
