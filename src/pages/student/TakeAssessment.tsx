@@ -1,20 +1,31 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
-import { AlertCircle, Clock, ChevronLeft, ChevronRight, Flag } from 'lucide-react';
+import { AlertCircle, Clock, ChevronLeft, ChevronRight, Flag, Camera, Eye, Monitor } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import SystemCheckDialog from '@/components/assessment/SystemCheckDialog';
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 
+// Mock data enhanced with proctoring settings
 const mockAssessment = {
   id: '1',
   title: 'Data Structures & Algorithms',
   totalTime: 90, // minutes
+  proctoring: {
+    requireWebcam: true,
+    trackScreenChanges: true,
+    preventTabSwitching: true,
+    recordVideo: false,
+    takeRandomSnapshots: true,
+    snapshotInterval: 30, // seconds
+    aiProctoring: true
+  },
   sections: [
     {
       id: '1',
@@ -104,25 +115,62 @@ const TakeAssessment: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const snapshotIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
   const [showSystemCheck, setShowSystemCheck] = useState(true);
   const [studentImage, setStudentImage] = useState<string | undefined>();
   const [videoAllowed, setVideoAllowed] = useState(false);
   const [showWarningDialog, setShowWarningDialog] = useState(false);
   const [warningMessage, setWarningMessage] = useState('');
+  const [showProctorPanel, setShowProctorPanel] = useState(false);
   
   const [currentSection, setCurrentSection] = useState(0);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [userAnswers, setUserAnswers] = useState<Record<string, number>>({});
   const [timeLeft, setTimeLeft] = useState(mockAssessment.totalTime * 60);
-  const [sectionTimeLeft, setSectionTimeLeft] = useState(mockAssessment.sections[0].timeLimit * 60);
+  const [sectionTimeLeft, setSectionTimeLeft] = useState(mockAssessment.sections[0]?.timeLimit * 60 || 0);
   const [warningCount, setWarningCount] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [assessmentStarted, setAssessmentStarted] = useState(false);
+  const [suspiciousActivities, setSuspiciousActivities] = useState<{
+    timestamp: Date;
+    type: string;
+    details: string;
+    snapshot?: string;
+  }[]>([]);
+  const [lastActiveTime, setLastActiveTime] = useState<Date>(new Date());
   
   // Get current section and question based on state
   const currentSectionData = mockAssessment.sections[currentSection];
   const currentQuestionData = currentSectionData?.questions[currentQuestion];
 
+  // Track assessment progress
+  useEffect(() => {
+    if (!assessmentStarted) return;
+
+    // Send progress update to server every 5 seconds
+    const progressInterval = setInterval(() => {
+      const progress = {
+        assessmentId: mockAssessment.id,
+        candidateId: 'current-user-id', // This would come from auth context
+        currentSection,
+        currentQuestion,
+        timeRemaining: timeLeft,
+        completed: false,
+        suspiciousActivities: suspiciousActivities.length
+      };
+      
+      // In a real app, you would send this to your backend
+      console.log('Assessment progress update:', progress);
+      
+    }, 5000);
+    
+    return () => clearInterval(progressInterval);
+  }, [assessmentStarted, currentSection, currentQuestion, timeLeft, suspiciousActivities]);
+
+  // Main timer for the assessment
   useEffect(() => {
     if (!assessmentStarted) return;
     
@@ -140,6 +188,7 @@ const TakeAssessment: React.FC = () => {
     return () => clearInterval(timer);
   }, [assessmentStarted]);
   
+  // Timer for each section
   useEffect(() => {
     if (!assessmentStarted) return;
     
@@ -167,12 +216,13 @@ const TakeAssessment: React.FC = () => {
     return () => clearInterval(sectionTimer);
   }, [currentSection, assessmentStarted]);
   
+  // Detect tab switching / window visibility
   useEffect(() => {
     if (!assessmentStarted) return;
     
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        handleSuspiciousActivity('You left the test window');
+        handleSuspiciousActivity('tab_switch', 'You left the test window');
       }
     };
     
@@ -182,12 +232,13 @@ const TakeAssessment: React.FC = () => {
     };
   }, [assessmentStarted]);
   
+  // Detect screen sharing / multiple monitors
   useEffect(() => {
     if (!assessmentStarted || !videoAllowed) return;
     
     const detectMultipleScreens = () => {
       if (window.screen && window.screen.availWidth > window.innerWidth * 1.5) {
-        handleSuspiciousActivity('Multiple screens detected');
+        handleSuspiciousActivity('screen_share', 'Multiple screens detected');
       }
     };
     
@@ -195,8 +246,134 @@ const TakeAssessment: React.FC = () => {
     
     return () => clearInterval(interval);
   }, [assessmentStarted, videoAllowed]);
+
+  // Inactivity detection
+  useEffect(() => {
+    if (!assessmentStarted) return;
+
+    const handleActivity = () => {
+      setLastActiveTime(new Date());
+    };
+
+    // Events to track user activity
+    const activityEvents = ['mousemove', 'keypress', 'scroll', 'click'];
+    activityEvents.forEach(event => {
+      window.addEventListener(event, handleActivity);
+    });
+
+    // Check for inactivity every 10 seconds
+    const inactivityCheck = setInterval(() => {
+      const inactiveTime = new Date().getTime() - lastActiveTime.getTime();
+      if (inactiveTime > 30000) { // 30 seconds of inactivity
+        handleSuspiciousActivity('inactivity', `No activity detected for ${Math.floor(inactiveTime / 1000)} seconds`);
+      }
+    }, 10000);
+
+    return () => {
+      activityEvents.forEach(event => {
+        window.removeEventListener(event, handleActivity);
+      });
+      clearInterval(inactivityCheck);
+    };
+  }, [assessmentStarted, lastActiveTime]);
   
-  const handleSuspiciousActivity = (reason: string) => {
+  // Setup webcam monitoring if allowed
+  useEffect(() => {
+    if (!assessmentStarted || !videoAllowed) return;
+    
+    let stream: MediaStream | null = null;
+    
+    const setupWebcam = async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { width: 640, height: 480 },
+          audio: false 
+        });
+        
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+        
+        // Take snapshots at random intervals
+        if (mockAssessment.proctoring?.takeRandomSnapshots) {
+          snapshotIntervalRef.current = setInterval(() => {
+            takeSnapshot();
+          }, (mockAssessment.proctoring?.snapshotInterval || 30) * 1000);
+        }
+      } catch (err) {
+        console.error('Error accessing webcam:', err);
+        toast({
+          title: "Webcam access error",
+          description: "Unable to access your webcam for proctoring. Please check your permissions.",
+          variant: "destructive",
+        });
+      }
+    };
+    
+    setupWebcam();
+    
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+      if (snapshotIntervalRef.current) {
+        clearInterval(snapshotIntervalRef.current);
+      }
+    };
+  }, [assessmentStarted, videoAllowed]);
+  
+  const takeSnapshot = () => {
+    if (!canvasRef.current || !videoRef.current) return;
+    
+    const context = canvasRef.current.getContext('2d');
+    if (!context) return;
+    
+    // Draw the video frame to the canvas
+    context.drawImage(
+      videoRef.current,
+      0, 0,
+      canvasRef.current.width,
+      canvasRef.current.height
+    );
+    
+    // Convert canvas to base64 image
+    const snapshot = canvasRef.current.toDataURL('image/jpeg', 0.5);
+    
+    // Here you would typically send this snapshot to your backend
+    // For demo purposes, we'll just log it
+    console.log('Snapshot taken');
+    
+    // In a real implementation, you might want to use face detection
+    // to check if the candidate is still present, if there are multiple 
+    // people in the frame, etc.
+    simulateFaceDetection(snapshot);
+  };
+  
+  // This is a mock function that simulates face detection
+  // In a real app, you would use a proper face detection library or API
+  const simulateFaceDetection = (snapshot: string) => {
+    // Randomly simulate issues for demonstration
+    const simulationValue = Math.random();
+    
+    if (simulationValue < 0.05) { // 5% chance to detect no face
+      handleSuspiciousActivity('no_face', 'No face detected in the webcam', snapshot);
+    } else if (simulationValue < 0.08) { // 3% chance to detect multiple faces
+      handleSuspiciousActivity('multiple_faces', 'Multiple faces detected in the webcam', snapshot);
+    } else if (simulationValue < 0.10) { // 2% chance to detect unknown face
+      handleSuspiciousActivity('unknown_face', 'Unrecognized face detected in the webcam', snapshot);
+    }
+  };
+  
+  const handleSuspiciousActivity = (type: string, reason: string, snapshot?: string) => {
+    const newActivity = {
+      timestamp: new Date(),
+      type,
+      details: reason,
+      snapshot
+    };
+    
+    setSuspiciousActivities(prev => [...prev, newActivity]);
+    
     const newCount = warningCount + 1;
     setWarningCount(newCount);
     setWarningMessage(reason);
@@ -261,6 +438,11 @@ const TakeAssessment: React.FC = () => {
   
   const handleSubmit = () => {
     setIsSubmitting(true);
+    
+    // In a real app, here we would submit both the answers and all proctoring data
+    console.log('Submitting answers:', userAnswers);
+    console.log('Submitting proctoring data:', suspiciousActivities);
+    
     setTimeout(() => {
       toast({
         title: "Assessment submitted",
@@ -328,6 +510,12 @@ const TakeAssessment: React.FC = () => {
 
   return (
     <div className="h-screen flex flex-col bg-slate-50">
+      {/* Hidden video and canvas for proctoring */}
+      <div className="hidden">
+        <video ref={videoRef} autoPlay muted playsInline></video>
+        <canvas ref={canvasRef} width="640" height="480"></canvas>
+      </div>
+      
       <AlertDialog open={showWarningDialog} onOpenChange={setShowWarningDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -352,6 +540,62 @@ const TakeAssessment: React.FC = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      
+      <Sheet open={showProctorPanel} onOpenChange={setShowProctorPanel}>
+        <SheetContent side="right" className="w-[400px] sm:w-[540px]">
+          <SheetHeader>
+            <SheetTitle>Proctor Monitor</SheetTitle>
+            <SheetDescription>
+              Real-time monitoring data for this assessment
+            </SheetDescription>
+          </SheetHeader>
+          <div className="py-4">
+            <div className="space-y-4">
+              <div className="p-4 border rounded-md bg-slate-50">
+                <h3 className="font-medium mb-2">Candidate Information</h3>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>Name:</div>
+                  <div className="font-medium">John Doe</div>
+                  <div>Assessment:</div>
+                  <div className="font-medium">{mockAssessment.title}</div>
+                  <div>Started:</div>
+                  <div className="font-medium">{new Date().toLocaleTimeString()}</div>
+                </div>
+              </div>
+              
+              <div>
+                <h3 className="font-medium mb-2">Suspicious Activity Log</h3>
+                {suspiciousActivities.length === 0 ? (
+                  <div className="text-sm text-muted-foreground p-2">No suspicious activities recorded</div>
+                ) : (
+                  <div className="space-y-3">
+                    {suspiciousActivities.map((activity, index) => (
+                      <div key={index} className="border rounded-md p-3 text-sm">
+                        <div className="flex justify-between items-center">
+                          <span className="font-medium text-red-600 capitalize">{activity.type.replace('_', ' ')}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {activity.timestamp.toLocaleTimeString()}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-muted-foreground">{activity.details}</p>
+                        {activity.snapshot && (
+                          <div className="mt-2">
+                            <img 
+                              src={activity.snapshot} 
+                              alt="Snapshot" 
+                              className="w-full h-auto rounded border"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <header className="bg-emerald-600 text-white py-4 px-6">
         <div className="flex justify-between items-center">
@@ -374,6 +618,9 @@ const TakeAssessment: React.FC = () => {
                 {formatTime(timeLeft)}
               </span>
             </div>
+            <div onClick={() => setShowProctorPanel(true)} className="cursor-pointer">
+              <Monitor className="h-5 w-5 text-white hover:text-emerald-200" />
+            </div>
           </div>
         </div>
         <div className="mt-2">
@@ -389,12 +636,20 @@ const TakeAssessment: React.FC = () => {
                 <CardTitle>Question {getQuestionIndex()} of {getTotalQuestions()}</CardTitle>
                 <CardDescription>{currentSectionData?.name}</CardDescription>
               </div>
-              {warningCount > 0 && (
-                <div className="flex items-center text-red-600">
-                  <AlertCircle className="h-4 w-4 mr-1" />
-                  <span className="text-sm font-medium">Warning: {warningCount}/3</span>
-                </div>
-              )}
+              <div className="flex items-center gap-2">
+                {warningCount > 0 && (
+                  <div className="flex items-center text-red-600">
+                    <AlertCircle className="h-4 w-4 mr-1" />
+                    <span className="text-sm font-medium">Warning: {warningCount}/3</span>
+                  </div>
+                )}
+                {videoAllowed && (
+                  <div className="flex items-center text-emerald-600">
+                    <Camera className="h-4 w-4 mr-1" />
+                    <span className="text-xs font-medium">Proctored</span>
+                  </div>
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -445,8 +700,8 @@ const TakeAssessment: React.FC = () => {
       <footer className="bg-white border-t py-3 px-6">
         <div className="flex justify-between items-center">
           <div className="text-sm text-muted-foreground">
-            <Flag className="inline h-4 w-4 mr-1" />
-            Proctor monitoring active • Do not leave this window
+            <Eye className="inline h-4 w-4 mr-1" />
+            Proctoring active • {mockAssessment.proctoring?.requireWebcam ? 'Webcam monitoring enabled' : 'Screen monitoring only'}
           </div>
           <Button 
             variant="outline" 
