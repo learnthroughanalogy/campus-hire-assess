@@ -7,13 +7,13 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { 
   AlertCircle, Clock, ChevronLeft, ChevronRight, Flag, Camera, Eye, 
-  Monitor, Shield, Maximize, Smartphone, Wifi, AlertTriangle 
+  Monitor, Shield, Maximize, Smartphone, Wifi, AlertTriangle, Mic, Video, ScreenShare
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import SystemCheckDialog from '@/components/assessment/SystemCheckDialog';
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { SecuritySetting, SuspiciousActivity } from '@/models/assessment';
+import { SecuritySetting, SuspiciousActivity, FaceDetectionResult, WebRTCConnection } from '@/models/assessment';
 
 const mockAssessment = {
   id: '1',
@@ -26,7 +26,14 @@ const mockAssessment = {
     recordVideo: false,
     takeRandomSnapshots: true,
     snapshotInterval: 30, // seconds
-    aiProctoring: true
+    aiProctoring: true,
+    webRTCStream: true,
+    liveProctoring: true,
+    behaviorAnalysis: true,
+    faceRecognition: true,
+    eyeMovementTracking: true,
+    audioMonitoring: false,
+    screenCaptureSensitivity: 'medium'
   },
   security: {
     enforceFullscreen: true,
@@ -154,17 +161,29 @@ const TakeAssessment: React.FC = () => {
   const { toast } = useToast();
   
   const videoRef = useRef<HTMLVideoElement>(null);
+  const screenVideoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const snapshotIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const fullscreenIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const webRTCIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // WebRTC related refs
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const webcamStreamRef = useRef<MediaStream | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
   
   const [showSystemCheck, setShowSystemCheck] = useState(true);
   const [studentImage, setStudentImage] = useState<string | undefined>();
   const [videoAllowed, setVideoAllowed] = useState(false);
+  const [screenShareAllowed, setScreenShareAllowed] = useState(false);
   const [showWarningDialog, setShowWarningDialog] = useState(false);
   const [warningMessage, setWarningMessage] = useState('');
   const [showProctorPanel, setShowProctorPanel] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  
+  const [webRTCStatus, setWebRTCStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'failed'>('disconnected');
+  const [webRTCConnectionId, setWebRTCConnectionId] = useState<string>('');
+  const [liveProctoring, setLiveProctoring] = useState<boolean>(false);
   
   const [currentSection, setCurrentSection] = useState(0);
   const [currentQuestion, setCurrentQuestion] = useState(0);
@@ -189,6 +208,7 @@ const TakeAssessment: React.FC = () => {
     fullscreenExits: 0
   });
   const [showSecurityBanner, setShowSecurityBanner] = useState(false);
+  const [faceDetectionResult, setFaceDetectionResult] = useState<FaceDetectionResult | null>(null);
   
   const currentSectionData = mockAssessment.sections[currentSection];
   const currentQuestionData = currentSectionData?.questions[currentQuestion];
@@ -237,10 +257,25 @@ const TakeAssessment: React.FC = () => {
       
       console.log('Assessment progress update:', progress);
       
+      // When live proctoring is enabled, also send webRTC status
+      if (liveProctoring && mockAssessment.proctoring?.webRTCStream) {
+        const webRTCData: WebRTCConnection = {
+          studentId: 'current-user-id',
+          assessmentId: mockAssessment.id,
+          connectionId: webRTCConnectionId,
+          startTime: new Date(),
+          webRTCStatus,
+          streamType: screenShareAllowed ? 'both' : 'webcam',
+          streamQuality: 'medium'
+        };
+        console.log('WebRTC connection status:', webRTCData);
+      }
+      
     }, 5000);
     
     return () => clearInterval(progressInterval);
-  }, [assessmentStarted, currentSection, currentQuestion, timeLeft, suspiciousActivities, deviceInfo, lastActiveTime, navigationEvents]);
+  }, [assessmentStarted, currentSection, currentQuestion, timeLeft, suspiciousActivities, deviceInfo, 
+     lastActiveTime, navigationEvents, liveProctoring, webRTCStatus, webRTCConnectionId, screenShareAllowed]);
 
   useEffect(() => {
     if (!assessmentStarted) return;
@@ -443,17 +478,24 @@ const TakeAssessment: React.FC = () => {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ 
           video: { width: 640, height: 480 },
-          audio: false 
+          audio: mockAssessment.proctoring?.audioMonitoring || false 
         });
         
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
+          webcamStreamRef.current = stream;
         }
         
         if (mockAssessment.proctoring?.takeRandomSnapshots) {
           snapshotIntervalRef.current = setInterval(() => {
             takeSnapshot();
           }, (mockAssessment.proctoring?.snapshotInterval || 30) * 1000);
+        }
+        
+        // If WebRTC streaming is enabled, initialize the connection
+        if (mockAssessment.proctoring?.webRTCStream && mockAssessment.proctoring?.liveProctoring) {
+          setLiveProctoring(true);
+          initializeWebRTCConnection();
         }
       } catch (err) {
         console.error('Error accessing webcam:', err);
@@ -474,8 +516,205 @@ const TakeAssessment: React.FC = () => {
       if (snapshotIntervalRef.current) {
         clearInterval(snapshotIntervalRef.current);
       }
+      
+      // Clean up WebRTC connection if it exists
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
+        peerConnectionRef.current = null;
+      }
+      if (webRTCIntervalRef.current) {
+        clearInterval(webRTCIntervalRef.current);
+      }
     };
   }, [assessmentStarted, videoAllowed]);
+  
+  const initializeWebRTCConnection = async () => {
+    try {
+      setWebRTCStatus('connecting');
+      
+      // In a real implementation, these would be fetched from your server
+      const iceServers = [
+        { urls: 'stun:stun.l.google.com:19302' }
+      ];
+      
+      // Create a new WebRTC peer connection
+      peerConnectionRef.current = new RTCPeerConnection({ 
+        iceServers 
+      });
+      
+      // Add the webcam stream to the peer connection
+      if (webcamStreamRef.current) {
+        webcamStreamRef.current.getTracks().forEach(track => {
+          if (peerConnectionRef.current && webcamStreamRef.current) {
+            peerConnectionRef.current.addTrack(track, webcamStreamRef.current);
+          }
+        });
+      }
+      
+      // Set up screen sharing if enabled
+      if (mockAssessment.proctoring?.trackScreenChanges) {
+        setupScreenSharing();
+      }
+      
+      // Handle ICE candidates
+      peerConnectionRef.current.onicecandidate = (event) => {
+        if (event.candidate) {
+          // In a real implementation, you would send this candidate to your signaling server
+          console.log('New ICE candidate:', event.candidate);
+        }
+      };
+      
+      // Handle connection state changes
+      peerConnectionRef.current.onconnectionstatechange = () => {
+        if (peerConnectionRef.current) {
+          switch(peerConnectionRef.current.connectionState) {
+            case 'connected':
+              setWebRTCStatus('connected');
+              console.log('WebRTC connected successfully');
+              toast({
+                title: "Live proctoring connected",
+                description: "Your webcam stream is now being monitored by a proctor.",
+              });
+              break;
+            case 'disconnected':
+            case 'failed':
+              setWebRTCStatus('failed');
+              console.error('WebRTC connection failed or disconnected');
+              toast({
+                title: "Proctoring connection lost",
+                description: "Connection to the proctoring service has been interrupted.",
+                variant: "destructive",
+              });
+              
+              // Attempt to reconnect after a delay
+              setTimeout(() => {
+                if (assessmentStarted && videoAllowed) {
+                  initializeWebRTCConnection();
+                }
+              }, 5000);
+              break;
+            default:
+              break;
+          }
+        }
+      };
+      
+      // Create and set local description for WebRTC
+      const offer = await peerConnectionRef.current.createOffer();
+      await peerConnectionRef.current.setLocalDescription(offer);
+      
+      // In a real implementation, you would send this offer to your signaling server
+      // and handle the response to set the remote description
+      console.log('Created WebRTC offer:', offer);
+      
+      // Simulate connecting to a signaling server and receiving an answer
+      // In a real application, this would be an API call to your backend
+      simulateSignalingServer(offer);
+      
+      // Generate a connection ID for tracking
+      setWebRTCConnectionId(`webrtc-${Date.now()}-${Math.floor(Math.random() * 1000)}`);
+      
+      // Set up a heartbeat to maintain the connection
+      webRTCIntervalRef.current = setInterval(() => {
+        if (peerConnectionRef.current && peerConnectionRef.current.connectionState === 'connected') {
+          console.log('WebRTC connection active');
+        } else if (peerConnectionRef.current && webRTCStatus === 'connected') {
+          console.warn('WebRTC connection state mismatch, reconnecting...');
+          initializeWebRTCConnection();
+        }
+      }, 30000);
+      
+    } catch (err) {
+      console.error('Error initializing WebRTC:', err);
+      setWebRTCStatus('failed');
+    }
+  };
+  
+  // Simulate communication with a signaling server
+  const simulateSignalingServer = (offer: RTCSessionDescriptionInit) => {
+    // In a real implementation, this would be an API call to your backend
+    // The backend would relay this offer to the proctor and return their answer
+    
+    setTimeout(async () => {
+      if (peerConnectionRef.current) {
+        try {
+          // Simulate receiving an answer from the server
+          const simulatedAnswer: RTCSessionDescriptionInit = {
+            type: 'answer',
+            sdp: offer.sdp // In real scenario, this would be the proctor's SDP
+          };
+          
+          // Set the remote description with the answer
+          await peerConnectionRef.current.setRemoteDescription(simulatedAnswer);
+          console.log('Set remote description with simulated answer');
+          
+          // For this simulation, we'll consider this a successful connection
+          if (peerConnectionRef.current.connectionState !== 'connected') {
+            setWebRTCStatus('connected');
+          }
+        } catch (err) {
+          console.error('Error setting remote description:', err);
+        }
+      }
+    }, 1000);
+  };
+  
+  const setupScreenSharing = async () => {
+    try {
+      if (!navigator.mediaDevices.getDisplayMedia) {
+        console.error('Screen sharing not supported in this browser');
+        return;
+      }
+      
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({ 
+        video: {
+          displaySurface: 'monitor',
+          logicalSurface: true,
+        } as any
+      });
+      
+      // Store the screen stream
+      screenStreamRef.current = screenStream;
+      
+      // Display the screen stream in a hidden video element
+      if (screenVideoRef.current) {
+        screenVideoRef.current.srcObject = screenStream;
+      }
+      
+      // Add the screen sharing tracks to the peer connection
+      if (peerConnectionRef.current) {
+        screenStream.getTracks().forEach(track => {
+          if (peerConnectionRef.current && screenStreamRef.current) {
+            peerConnectionRef.current.addTrack(track, screenStreamRef.current);
+          }
+        });
+      }
+      
+      // Listen for the end of screen sharing
+      screenStream.getVideoTracks()[0].onended = () => {
+        console.log('Screen sharing stopped by user');
+        handleSuspiciousActivity('screen_share', 'Screen sharing was stopped', undefined, 'medium');
+        
+        // Attempt to restart screen sharing after a warning
+        setTimeout(async () => {
+          if (assessmentStarted && videoAllowed) {
+            toast({
+              title: "Screen sharing required",
+              description: "Screen sharing is required for this assessment. Please enable it again.",
+              variant: "destructive",
+            });
+            setupScreenSharing();
+          }
+        }, 3000);
+      };
+      
+      setScreenShareAllowed(true);
+      
+    } catch (err) {
+      console.error('Error accessing screen sharing:', err);
+      handleSuspiciousActivity('screen_share', 'Failed to start screen sharing', undefined, 'medium');
+    }
+  };
   
   const takeSnapshot = () => {
     if (!canvasRef.current || !videoRef.current) return;
@@ -494,7 +733,64 @@ const TakeAssessment: React.FC = () => {
     
     console.log('Snapshot taken');
     
-    simulateFaceDetection(snapshot);
+    // Use enhanced face detection
+    if (mockAssessment.proctoring?.behaviorAnalysis) {
+      enhancedFaceDetection(snapshot);
+    } else {
+      simulateFaceDetection(snapshot);
+    }
+  };
+  
+  const enhancedFaceDetection = async (snapshot: string) => {
+    // In a real implementation, this would use a face detection API or library
+    // like TensorFlow.js with face-api.js
+    
+    // For this demo, we'll simulate the results
+    const simulationValue = Math.random();
+    const result: FaceDetectionResult = {
+      faceCount: 1,
+      verified: true,
+      primaryFace: {
+        confidence: 0.95,
+        boundingBox: { x: 120, y: 80, width: 200, height: 200 }
+      }
+    };
+    
+    if (simulationValue < 0.03) {
+      // No face detected
+      result.faceCount = 0;
+      result.verified = false;
+      handleSuspiciousActivity('no_face', 'No face detected in the webcam', snapshot, 'medium');
+    } else if (simulationValue < 0.06) {
+      // Multiple faces detected
+      result.faceCount = 2;
+      result.verified = false;
+      handleSuspiciousActivity('multiple_faces', 'Multiple faces detected in the webcam', snapshot, 'high');
+    } else if (simulationValue < 0.09) {
+      // Face too far from camera
+      result.faceCount = 1;
+      result.verified = false;
+      result.primaryFace!.confidence = 0.6;
+      result.primaryFace!.boundingBox = { x: 150, y: 100, width: 100, height: 100 };
+      handleSuspiciousActivity('face_movement', 'Face too far from the camera', snapshot, 'low');
+    } else if (simulationValue < 0.12) {
+      // Face identity verification failed
+      result.faceCount = 1;
+      result.verified = false;
+      result.matchScore = 0.65; // Below threshold
+      handleSuspiciousActivity('unknown_face', 'Face identity verification failed', snapshot, 'high');
+    } else if (simulationValue < 0.15) {
+      // Abnormal eye movement detected 
+      result.faceCount = 1;
+      result.verified = true;
+      result.primaryFace!.landmarks = {
+        leftEye: { x: 150, y: 120 },
+        rightEye: { x: 250, y: 120 },
+      };
+      handleSuspiciousActivity('eye_movement', 'Suspicious eye movements detected', snapshot, 'medium');
+    }
+    
+    setFaceDetectionResult(result);
   };
   
   const simulateFaceDetection = (snapshot: string) => {
@@ -513,14 +809,16 @@ const TakeAssessment: React.FC = () => {
     type: string, 
     reason: string, 
     snapshot?: string, 
-    severity: 'low' | 'medium' | 'high' = 'medium'
+    severity: 'low' | 'medium' | 'high' = 'medium',
+    aiConfidence?: number
   ) => {
     const newActivity = {
       timestamp: new Date(),
       type,
       details: reason,
       snapshot,
-      severity
+      severity,
+      aiConfidence: aiConfidence || (severity === 'high' ? 0.9 : severity === 'medium' ? 0.7 : 0.5)
     } as SuspiciousActivity;
     
     setSuspiciousActivities(prev => [...prev, newActivity]);
@@ -608,385 +906,4 @@ const TakeAssessment: React.FC = () => {
   
   const handleSubmit = () => {
     setIsSubmitting(true);
-    logNavigationEvent('assessment_submit', 'Assessment submitted');
-    
-    console.log('Submitting answers:', userAnswers);
-    console.log('Submitting proctoring data:', suspiciousActivities);
-    console.log('Submitting session data:', {
-      deviceInfo,
-      navigationEvents
-    });
-    
-    setTimeout(() => {
-      toast({
-        title: "Assessment submitted",
-        description: "Your answers have been recorded successfully.",
-      });
-      navigate('/my-results');
-    }, 1500);
-  };
-  
-  const calculateProgress = () => {
-    let totalQuestions = 0;
-    let completedQuestions = 0;
-    
-    mockAssessment.sections.forEach((sect, sIdx) => {
-      totalQuestions += sect.questions.length;
-      
-      if (sIdx < currentSection) {
-        completedQuestions += sect.questions.length;
-      } else if (sIdx === currentSection) {
-        sect.questions.forEach((q) => {
-          if (userAnswers[q.id] !== undefined) {
-            completedQuestions++;
-          }
-        });
-      }
-    });
-    
-    return (completedQuestions / totalQuestions) * 100;
-  };
-  
-  const getQuestionIndex = () => {
-    let questionIndex = currentQuestion;
-    
-    for (let i = 0; i < currentSection; i++) {
-      questionIndex += mockAssessment.sections[i].questions.length;
-    }
-    
-    return questionIndex + 1;
-  };
-  
-  const getTotalQuestions = () => {
-    return mockAssessment.sections.reduce((sum, section) => sum + section.questions.length, 0);
-  };
-
-  if (showSystemCheck) {
-    return (
-      <SystemCheckDialog 
-        open={showSystemCheck}
-        onComplete={handleSystemCheckComplete}
-      />
-    );
-  }
-
-  if (isSubmitting) {
-    return (
-      <div className="h-screen flex flex-col items-center justify-center bg-slate-50">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold mb-2">Submitting your assessment...</h2>
-          <p className="text-muted-foreground mb-6">Please wait while we process your answers.</p>
-          <div className="w-24 h-24 rounded-full border-4 border-emerald-200 border-t-emerald-600 animate-spin mx-auto"></div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="h-screen flex flex-col bg-slate-50">
-      <div className="hidden">
-        <video ref={videoRef} autoPlay muted playsInline></video>
-        <canvas ref={canvasRef} width="640" height="480"></canvas>
-      </div>
-      
-      {showSecurityBanner && (
-        <div className="bg-red-600 text-white p-3 text-center flex items-center justify-center gap-2">
-          <AlertCircle className="h-5 w-5" />
-          <span>Security violation detected! Please return to fullscreen mode to continue your assessment.</span>
-        </div>
-      )}
-      
-      <AlertDialog open={showWarningDialog} onOpenChange={setShowWarningDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              <div className="flex items-center text-red-600">
-                <AlertCircle className="mr-2 h-5 w-5" />
-                Warning: Suspicious Activity
-              </div>
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {warningMessage}. This incident has been recorded.
-              <div className="mt-2 font-semibold">Warning {warningCount} of {mockAssessment.security?.maxWarningsBeforeTermination || 3}</div>
-              <div className="text-sm text-muted-foreground mt-1">
-                Your assessment will be terminated after {mockAssessment.security?.maxWarningsBeforeTermination || 3} warnings.
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogAction>
-              I understand
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      
-      <Sheet open={showProctorPanel} onOpenChange={setShowProctorPanel}>
-        <SheetContent side="right" className="w-[400px] sm:w-[540px]">
-          <SheetHeader>
-            <SheetTitle>Proctor Monitor</SheetTitle>
-            <SheetDescription>
-              Real-time monitoring data for this assessment
-            </SheetDescription>
-          </SheetHeader>
-          <div className="py-4 h-[calc(100vh-120px)] overflow-y-auto">
-            <div className="space-y-4">
-              <div className="p-4 border rounded-md bg-slate-50">
-                <h3 className="font-medium mb-2">Candidate Information</h3>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div>Name:</div>
-                  <div className="font-medium">John Doe</div>
-                  <div>Assessment:</div>
-                  <div className="font-medium">{mockAssessment.title}</div>
-                  <div>Started:</div>
-                  <div className="font-medium">{new Date().toLocaleTimeString()}</div>
-                </div>
-              </div>
-              
-              <div className="p-4 border rounded-md bg-slate-50">
-                <h3 className="font-medium mb-2 flex items-center">
-                  <Shield className="h-4 w-4 mr-1 text-emerald-600" />
-                  Security Information
-                </h3>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div>Device ID:</div>
-                  <div className="font-medium">{deviceInfo.deviceId}</div>
-                  <div>IP Address:</div>
-                  <div className="font-medium">{deviceInfo.ipAddress}</div>
-                  <div>Screen Resolution:</div>
-                  <div className="font-medium">{deviceInfo.screenResolution}</div>
-                  <div>Fullscreen Exits:</div>
-                  <div className="font-medium">{deviceInfo.fullscreenExits}</div>
-                </div>
-              </div>
-              
-              <div>
-                <h3 className="font-medium mb-2 flex items-center">
-                  <AlertTriangle className="h-4 w-4 mr-1 text-amber-500" />
-                  Suspicious Activity Log
-                </h3>
-                {suspiciousActivities.length === 0 ? (
-                  <div className="text-sm text-muted-foreground p-2">No suspicious activities recorded</div>
-                ) : (
-                  <div className="space-y-3">
-                    {suspiciousActivities.map((activity, index) => (
-                      <div 
-                        key={index} 
-                        className={`border rounded-md p-3 text-sm ${
-                          activity.severity === 'high' ? 'border-red-300 bg-red-50' : 
-                          activity.severity === 'medium' ? 'border-amber-300 bg-amber-50' : 
-                          'border-blue-300 bg-blue-50'
-                        }`}
-                      >
-                        <div className="flex justify-between items-center">
-                          <span className={`font-medium capitalize ${
-                            activity.severity === 'high' ? 'text-red-600' : 
-                            activity.severity === 'medium' ? 'text-amber-600' : 
-                            'text-blue-600'
-                          }`}>
-                            {activity.type.replace('_', ' ')}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {activity.timestamp instanceof Date 
-                              ? activity.timestamp.toLocaleTimeString() 
-                              : new Date(activity.timestamp).toLocaleTimeString()}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-muted-foreground">{activity.details}</p>
-                        {activity.snapshot && (
-                          <div className="mt-2">
-                            <img 
-                              src={activity.snapshot} 
-                              alt="Snapshot" 
-                              className="w-full h-auto rounded border"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              
-              <div>
-                <h3 className="font-medium mb-2 flex items-center">
-                  <Clock className="h-4 w-4 mr-1 text-blue-600" />
-                  Session Activity Log
-                </h3>
-                {navigationEvents.length === 0 ? (
-                  <div className="text-sm text-muted-foreground p-2">No activities recorded yet</div>
-                ) : (
-                  <div className="border rounded-md overflow-hidden">
-                    <table className="w-full text-sm">
-                      <thead className="bg-slate-100 text-left">
-                        <tr>
-                          <th className="p-2">Time</th>
-                          <th className="p-2">Action</th>
-                          <th className="p-2">Details</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y">
-                        {navigationEvents.map((event, index) => (
-                          <tr key={index} className="hover:bg-slate-50">
-                            <td className="p-2 text-xs">
-                              {event.timestamp instanceof Date 
-                                ? event.timestamp.toLocaleTimeString() 
-                                : new Date(event.timestamp).toLocaleTimeString()}
-                            </td>
-                            <td className="p-2 capitalize">{event.action.replace('_', ' ')}</td>
-                            <td className="p-2 text-muted-foreground text-xs">{event.details}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </SheetContent>
-      </Sheet>
-
-      <header className="bg-emerald-600 text-white py-4 px-6">
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="font-bold text-lg">{mockAssessment.title}</h1>
-            <p className="text-sm text-emerald-100">Section: {currentSectionData?.name}</p>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="flex flex-col items-center">
-              <span className="text-xs">Section Time</span>
-              <span className="font-mono font-semibold">
-                <Clock className="inline h-4 w-4 mr-1" />
-                {formatTime(sectionTimeLeft)}
-              </span>
-            </div>
-            <div className="flex flex-col items-center">
-              <span className="text-xs">Total Time</span>
-              <span className="font-mono font-semibold">
-                <Clock className="inline h-4 w-4 mr-1" />
-                {formatTime(timeLeft)}
-              </span>
-            </div>
-            <div onClick={() => setShowProctorPanel(true)} className="cursor-pointer">
-              <Monitor className="h-5 w-5 text-white hover:text-emerald-200" />
-            </div>
-          </div>
-        </div>
-        <div className="mt-2">
-          <Progress value={calculateProgress()} className="h-2" />
-        </div>
-      </header>
-
-      <div className="flex-1 container mx-auto py-6 px-4 md:px-6 overflow-y-auto">
-        <Card className="shadow-md">
-          <CardHeader>
-            <div className="flex justify-between items-center">
-              <div>
-                <CardTitle>Question {getQuestionIndex()} of {getTotalQuestions()}</CardTitle>
-                <CardDescription>{currentSectionData?.name}</CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                {warningCount > 0 && (
-                  <div className="flex items-center text-red-600">
-                    <AlertCircle className="h-4 w-4 mr-1" />
-                    <span className="text-sm font-medium">Warning: {warningCount}/{mockAssessment.security?.maxWarningsBeforeTermination || 3}</span>
-                  </div>
-                )}
-                <div className="flex space-x-1">
-                  {videoAllowed && (
-                    <div className="flex items-center text-emerald-600">
-                      <Camera className="h-4 w-4 mr-1" />
-                      <span className="text-xs font-medium">Webcam</span>
-                    </div>
-                  )}
-                  {isFullscreen && (
-                    <div className="flex items-center text-emerald-600">
-                      <Maximize className="h-4 w-4 mr-1" />
-                      <span className="text-xs font-medium">Fullscreen</span>
-                    </div>
-                  )}
-                  {deviceInfo.deviceId && (
-                    <div className="flex items-center text-emerald-600">
-                      <Smartphone className="h-4 w-4 mr-1" />
-                      <span className="text-xs font-medium">Verified</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <h3 className="text-lg font-medium">{currentQuestionData?.text}</h3>
-              <RadioGroup 
-                value={userAnswers[currentQuestionData?.id]?.toString()}
-                onValueChange={(value) => handleAnswerSelect(currentQuestionData?.id, parseInt(value))}
-              >
-                <div className="space-y-3">
-                  {currentQuestionData?.options.map((option, idx) => (
-                    <div 
-                      key={idx}
-                      className="flex items-center space-x-2 border p-3 rounded-md hover:bg-slate-50"
-                    >
-                      <RadioGroupItem value={idx.toString()} id={`option-${idx}`} />
-                      <Label className="flex-1 cursor-pointer" htmlFor={`option-${idx}`}>{option}</Label>
-                    </div>
-                  ))}
-                </div>
-              </RadioGroup>
-            </div>
-          </CardContent>
-          <CardFooter className="flex justify-between border-t p-4">
-            <Button
-              variant="outline"
-              onClick={navigateToPrevQuestion}
-              disabled={currentSection === 0 && currentQuestion === 0}
-            >
-              <ChevronLeft className="h-4 w-4 mr-1" /> Previous
-            </Button>
-            <div className="flex gap-2">
-              {(currentSection === mockAssessment.sections.length - 1 && 
-                currentQuestion === currentSectionData.questions.length - 1) ? (
-                <Button onClick={handleSubmit}>
-                  Submit Assessment
-                </Button>
-              ) : (
-                <Button onClick={navigateToNextQuestion}>
-                  Next <ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
-              )}
-            </div>
-          </CardFooter>
-        </Card>
-      </div>
-      
-      <footer className="bg-white border-t py-3 px-6">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <div className="flex items-center">
-              <Eye className="inline h-4 w-4 mr-1" />
-              <span>Proctoring active</span>
-            </div>
-            <div className="flex items-center">
-              <Shield className="inline h-4 w-4 mr-1" />
-              <span>Security enabled</span>
-            </div>
-            <div className="flex items-center">
-              <Wifi className="inline h-4 w-4 mr-1" />
-              <span>IP: {deviceInfo.ipAddress}</span>
-            </div>
-          </div>
-          <Button 
-            variant="outline" 
-            onClick={handleSubmit}
-          >
-            Save & Exit
-          </Button>
-        </div>
-      </footer>
-    </div>
-  );
-};
-
-export default TakeAssessment;
+    logNavigationEvent('assessment_submit', 'Assessment submitted
