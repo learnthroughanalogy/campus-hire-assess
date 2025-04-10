@@ -787,7 +787,9 @@ const TakeAssessment: React.FC = () => {
                             {activity.type.replace('_', ' ')}
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            {activity.timestamp.toLocaleTimeString()}
+                            {activity.timestamp instanceof Date 
+                              ? activity.timestamp.toLocaleTimeString() 
+                              : new Date(activity.timestamp).toLocaleTimeString()}
                           </span>
                         </div>
                         <p className="mt-1 text-muted-foreground">{activity.details}</p>
@@ -826,7 +828,11 @@ const TakeAssessment: React.FC = () => {
                       <tbody className="divide-y">
                         {navigationEvents.map((event, index) => (
                           <tr key={index} className="hover:bg-slate-50">
-                            <td className="p-2 text-xs">{event.timestamp.toLocaleTimeString()}</td>
+                            <td className="p-2 text-xs">
+                              {event.timestamp instanceof Date 
+                                ? event.timestamp.toLocaleTimeString() 
+                                : new Date(event.timestamp).toLocaleTimeString()}
+                            </td>
                             <td className="p-2 capitalize">{event.action.replace('_', ' ')}</td>
                             <td className="p-2 text-muted-foreground text-xs">{event.details}</td>
                           </tr>
