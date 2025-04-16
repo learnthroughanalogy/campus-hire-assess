@@ -14,6 +14,7 @@ import SystemCheckDialog from '@/components/assessment/SystemCheckDialog';
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { SecuritySetting, SuspiciousActivity, FaceDetectionResult, WebRTCConnection } from '@/models/assessment';
+import MonitoringScreen from '@/components/assessment/MonitoringScreen';
 
 const mockAssessment = {
   id: '1',
@@ -906,24 +907,3 @@ const TakeAssessment: React.FC = () => {
   
   const handleSubmit = () => {
     setIsSubmitting(true);
-    logNavigationEvent('assessment_submit', 'Assessment submitted');
-    
-    // Here we would normally send the answers to the server
-    console.log('Submitting answers:', userAnswers);
-    
-    toast({
-      title: "Assessment submitted",
-      description: "Your answers have been submitted successfully. You will be redirected shortly.",
-    });
-    
-    setTimeout(() => navigate('/my-assessments'), 2000);
-  };
-  
-  return (
-    <div>
-      {/* Component JSX */}
-    </div>
-  );
-};
-
-export default TakeAssessment;
