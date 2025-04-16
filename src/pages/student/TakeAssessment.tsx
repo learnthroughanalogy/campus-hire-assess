@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -907,3 +908,177 @@ const TakeAssessment: React.FC = () => {
   
   const handleSubmit = () => {
     setIsSubmitting(true);
+    logNavigationEvent('assessment_submit', 'Assessment submitted');
+    
+    // Here we would normally send the answers to the server
+    console.log('Submitting answers:', userAnswers);
+    
+    toast({
+      title: "Assessment submitted",
+      description: "Your answers have been submitted successfully. You will be redirected shortly.",
+    });
+    
+    setTimeout(() => navigate('/my-assessments'), 2000);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* System check dialog */}
+      <SystemCheckDialog 
+        open={showSystemCheck} 
+        onComplete={handleSystemCheckComplete}
+      />
+
+      {/* Warning dialog for suspicious activities */}
+      <AlertDialog open={showWarningDialog} onOpenChange={setShowWarningDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Warning</AlertDialogTitle>
+            <AlertDialogDescription>
+              {warningMessage}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction>Acknowledge</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      
+      {/* Security banner */}
+      {showSecurityBanner && (
+        <div className="fixed top-0 left-0 w-full bg-red-500 text-white p-2 text-center z-50">
+          <AlertTriangle className="inline-block mr-2 h-4 w-4" />
+          Please return to fullscreen mode to continue the assessment
+        </div>
+      )}
+
+      {/* Main assessment content */}
+      {assessmentStarted && (
+        <div className="container mx-auto py-6 px-4">
+          {/* Assessment header */}
+          <header className="mb-6">
+            <h1 className="text-2xl font-bold">{mockAssessment.title}</h1>
+            <div className="flex items-center justify-between mt-2">
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center">
+                  <Clock className="h-4 w-4 mr-2" />
+                  <span className="font-medium">{formatTime(timeLeft)}</span>
+                </div>
+                <div>
+                  <span className="text-sm text-gray-500">
+                    Section {currentSection + 1}/{mockAssessment.sections.length}: {formatTime(sectionTimeLeft)}
+                  </span>
+                </div>
+              </div>
+              <Button 
+                variant="destructive" 
+                size="sm" 
+                onClick={handleSubmit}
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? 'Submitting...' : 'Submit Test'}
+              </Button>
+            </div>
+            <Progress 
+              value={(currentSection / mockAssessment.sections.length) * 100} 
+              className="mt-2 h-1"
+            />
+          </header>
+
+          {/* Question area */}
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <Card className="lg:col-span-3">
+              <CardHeader>
+                <CardTitle>
+                  Question {currentQuestion + 1} of {currentSectionData?.questions.length}
+                </CardTitle>
+                <CardDescription>
+                  {currentSectionData?.name}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <p className="text-lg">{currentQuestionData?.text}</p>
+                  
+                  <RadioGroup 
+                    value={userAnswers[currentQuestionData?.id] !== undefined ? userAnswers[currentQuestionData?.id].toString() : undefined}
+                    onValueChange={(value) => currentQuestionData && handleAnswerSelect(currentQuestionData.id, parseInt(value))}
+                    className="space-y-3"
+                  >
+                    {currentQuestionData?.options.map((option, index) => (
+                      <div key={index} className="flex items-center space-x-2">
+                        <RadioGroupItem value={index.toString()} id={`option-${index}`} />
+                        <Label htmlFor={`option-${index}`} className="text-base">{option}</Label>
+                      </div>
+                    ))}
+                  </RadioGroup>
+                </div>
+              </CardContent>
+              <CardFooter className="flex justify-between">
+                <Button
+                  variant="outline"
+                  onClick={navigateToPrevQuestion}
+                  disabled={currentSection === 0 && currentQuestion === 0}
+                >
+                  <ChevronLeft className="h-4 w-4 mr-2" />
+                  Previous
+                </Button>
+                <Button
+                  onClick={navigateToNextQuestion}
+                  disabled={
+                    currentSection === mockAssessment.sections.length - 1 && 
+                    currentQuestion === currentSectionData?.questions.length - 1
+                  }
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4 ml-2" />
+                </Button>
+              </CardFooter>
+            </Card>
+            
+            <div className="space-y-4">
+              {/* Section progress card */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium">Progress</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-5 gap-1">
+                    {currentSectionData?.questions.map((_, index) => (
+                      <Button
+                        key={index}
+                        variant={currentQuestion === index ? "default" : userAnswers[currentSectionData?.questions[index].id] !== undefined ? "outline" : "ghost"}
+                        className="h-8 w-8 p-0"
+                        onClick={() => setCurrentQuestion(index)}
+                      >
+                        {index + 1}
+                      </Button>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+              
+              {/* Hidden canvas for snapshots */}
+              <canvas ref={canvasRef} className="hidden" width="640" height="480" />
+              
+              {/* Hidden screen sharing video */}
+              <video ref={screenVideoRef} className="hidden" autoPlay playsInline muted />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Monitoring panel - always visible when assessment is started */}
+      {assessmentStarted && videoAllowed && (
+        <MonitoringScreen 
+          videoRef={videoRef}
+          screenVideoRef={screenVideoRef}
+          webRTCStatus={webRTCStatus}
+          suspiciousActivities={suspiciousActivities}
+        />
+      )}
+    </div>
+  );
+};
+
+export default TakeAssessment;
