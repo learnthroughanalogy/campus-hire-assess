@@ -9,7 +9,7 @@ interface MonitoringScreenProps {
   screenVideoRef: React.RefObject<HTMLVideoElement>;
   webRTCStatus: 'disconnected' | 'connecting' | 'connected' | 'failed';
   suspiciousActivities: Array<{
-    timestamp: Date;
+    timestamp: Date | string;
     type: string;
     details: string;
     severity: 'low' | 'medium' | 'high';
@@ -22,7 +22,7 @@ const MonitoringScreen: React.FC<MonitoringScreenProps> = ({
   webRTCStatus,
   suspiciousActivities,
 }) => {
-  const latestActivity = suspiciousActivities[suspiciousActivities.length - 1];
+  const latestActivity = suspiciousActivities.length > 0 ? suspiciousActivities[suspiciousActivities.length - 1] : null;
 
   return (
     <div className="fixed top-4 right-4 w-[300px] space-y-4 z-50">
