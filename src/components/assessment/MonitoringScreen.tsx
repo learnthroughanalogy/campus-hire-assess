@@ -3,17 +3,13 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { AlertCircle, Camera, Monitor, Shield, Wifi } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { SuspiciousActivity } from '@/models/assessment';
 
 interface MonitoringScreenProps {
   videoRef: React.RefObject<HTMLVideoElement>;
   screenVideoRef: React.RefObject<HTMLVideoElement>;
   webRTCStatus: 'disconnected' | 'connecting' | 'connected' | 'failed';
-  suspiciousActivities: Array<{
-    timestamp: Date | string;
-    type: string;
-    details: string;
-    severity: 'low' | 'medium' | 'high';
-  }>;
+  suspiciousActivities: SuspiciousActivity[];
 }
 
 const MonitoringScreen: React.FC<MonitoringScreenProps> = ({
@@ -83,7 +79,7 @@ const MonitoringScreen: React.FC<MonitoringScreenProps> = ({
         <Alert variant="destructive" className="animate-fade-in">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription className="text-xs mt-1">
-            {latestActivity.details}
+            {latestActivity.details || "Suspicious activity detected"}
           </AlertDescription>
         </Alert>
       )}

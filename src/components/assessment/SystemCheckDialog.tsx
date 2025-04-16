@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -16,6 +15,7 @@ interface SystemCheckResult {
   status: 'pending' | 'checking' | 'success' | 'fail';
   icon: React.ReactNode;
   message: string;
+  fixInstructions?: string;
 }
 
 const SystemCheckDialog: React.FC<SystemCheckDialogProps> = ({ open, onComplete }) => {
@@ -27,63 +27,43 @@ const SystemCheckDialog: React.FC<SystemCheckDialogProps> = ({ open, onComplete 
   const streamRef = useRef<MediaStream | null>(null);
   
   const [systemChecks, setSystemChecks] = useState<SystemCheckResult[]>([
-    { name: 'Browser Compatibility', status: 'pending', icon: <Cpu className="h-4 w-4" />, message: 'Checking browser...' },
-    { name: 'Screen Resolution', status: 'pending', icon: <Monitor className="h-4 w-4" />, message: 'Checking screen resolution...' },
-    { name: 'Audio Device', status: 'pending', icon: <Mic className="h-4 w-4" />, message: 'Checking microphone...' },
-    { name: 'Internet Connection', status: 'pending', icon: <Wifi className="h-4 w-4" />, message: 'Checking internet connection...' },
-    { name: 'Camera Access', status: 'pending', icon: <Camera className="h-4 w-4" />, message: 'Checking camera...' },
+    { 
+      name: 'Browser Compatibility', 
+      status: 'pending', 
+      icon: <Cpu className="h-4 w-4" />, 
+      message: 'Checking browser...', 
+      fixInstructions: 'Please use Chrome, Firefox, Safari, or Edge browsers for best compatibility.' 
+    },
+    { 
+      name: 'Screen Resolution', 
+      status: 'pending', 
+      icon: <Monitor className="h-4 w-4" />, 
+      message: 'Checking screen resolution...', 
+      fixInstructions: 'Your screen resolution should be at least 1024x768. Try maximizing your browser or using a device with a larger screen.' 
+    },
+    { 
+      name: 'Audio Device', 
+      status: 'pending', 
+      icon: <Mic className="h-4 w-4" />, 
+      message: 'Checking microphone...', 
+      fixInstructions: 'Please connect a microphone and grant permission to use it when prompted.' 
+    },
+    { 
+      name: 'Internet Connection', 
+      status: 'pending', 
+      icon: <Wifi className="h-4 w-4" />, 
+      message: 'Checking internet connection...', 
+      fixInstructions: 'Please check your internet connection and try again.' 
+    },
+    { 
+      name: 'Camera Access', 
+      status: 'pending', 
+      icon: <Camera className="h-4 w-4" />, 
+      message: 'Checking camera...', 
+      fixInstructions: 'Please connect a webcam and grant permission to use it when prompted. Check your browser settings if the permission prompt does not appear.' 
+    },
   ]);
 
-  // Perform system checks
-  useEffect(() => {
-    if (currentStep !== 'checking' || !open) return;
-    
-    const runChecks = async () => {
-      // Check browser compatibility
-      updateCheckStatus(0, 'checking');
-      await simulateCheck();
-      const isCompatibleBrowser = /Chrome|Firefox|Safari|Edge/.test(navigator.userAgent);
-      updateCheckStatus(0, isCompatibleBrowser ? 'success' : 'fail');
-      
-      // Check screen resolution
-      updateCheckStatus(1, 'checking');
-      await simulateCheck();
-      const hasMinResolution = window.innerWidth >= 1024 && window.innerHeight >= 768;
-      updateCheckStatus(1, hasMinResolution ? 'success' : 'fail');
-      
-      // Check audio device
-      updateCheckStatus(2, 'checking');
-      try {
-        await simulateCheck();
-        const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        audioStream.getTracks().forEach(track => track.stop());
-        updateCheckStatus(2, 'success');
-      } catch (error) {
-        updateCheckStatus(2, 'fail');
-      }
-      
-      // Check internet connection
-      updateCheckStatus(3, 'checking');
-      await simulateCheck();
-      const hasGoodConnection = navigator.onLine;
-      updateCheckStatus(3, hasGoodConnection ? 'success' : 'fail');
-      
-      // Check camera access
-      updateCheckStatus(4, 'checking');
-      try {
-        await simulateCheck();
-        const cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
-        cameraStream.getTracks().forEach(track => track.stop());
-        updateCheckStatus(4, 'success');
-      } catch (error) {
-        updateCheckStatus(4, 'fail');
-      }
-    };
-    
-    runChecks();
-  }, [currentStep, open]);
-  
-  // Helper function to update check status
   const updateCheckStatus = (index: number, status: 'pending' | 'checking' | 'success' | 'fail') => {
     setSystemChecks(prev => 
       prev.map((check, i) => 
@@ -101,14 +81,66 @@ const SystemCheckDialog: React.FC<SystemCheckDialogProps> = ({ open, onComplete 
       )
     );
   };
-  
-  // Helper function to simulate async check
+
   const simulateCheck = () => new Promise(resolve => setTimeout(resolve, 500));
-  
-  // Check if all tests passed
+
   const allChecksPassed = systemChecks.every(check => check.status === 'success');
-  
-  // Handle proceeding to next step
+
+  const retryFailedChecks = async () => {
+    const failedChecks = systemChecks.filter(check => check.status === 'fail');
+    
+    setSystemChecks(prev => 
+      prev.map(check => check.status === 'fail' ? { ...check, status: 'pending' } : check)
+    );
+    
+    runChecks();
+  };
+
+  const runChecks = async () => {
+    if (currentStep !== 'checking' || !open) return;
+    
+    updateCheckStatus(0, 'checking');
+    await simulateCheck();
+    const isCompatibleBrowser = /Chrome|Firefox|Safari|Edge/.test(navigator.userAgent);
+    updateCheckStatus(0, isCompatibleBrowser ? 'success' : 'fail');
+    
+    updateCheckStatus(1, 'checking');
+    await simulateCheck();
+    const hasMinResolution = window.innerWidth >= 1024 && window.innerHeight >= 768;
+    updateCheckStatus(1, hasMinResolution ? 'success' : 'fail');
+    
+    updateCheckStatus(2, 'checking');
+    try {
+      await simulateCheck();
+      const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioStream.getTracks().forEach(track => track.stop());
+      updateCheckStatus(2, 'success');
+    } catch (error) {
+      updateCheckStatus(2, 'fail');
+    }
+    
+    updateCheckStatus(3, 'checking');
+    await simulateCheck();
+    const hasGoodConnection = navigator.onLine;
+    updateCheckStatus(3, hasGoodConnection ? 'success' : 'fail');
+    
+    updateCheckStatus(4, 'checking');
+    try {
+      await simulateCheck();
+      const cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      cameraStream.getTracks().forEach(track => track.stop());
+      updateCheckStatus(4, 'success');
+    } catch (error) {
+      updateCheckStatus(4, 'fail');
+    }
+  };
+
+  useEffect(() => {
+    if (currentStep === 'checking' && open) {
+      runChecks();
+    }
+  }, [currentStep, open]);
+
   const handleProceedToCamera = () => {
     if (allChecksPassed) {
       setCurrentStep('camera');
@@ -121,8 +153,7 @@ const SystemCheckDialog: React.FC<SystemCheckDialogProps> = ({ open, onComplete 
       });
     }
   };
-  
-  // Initialize camera for taking student's photo
+
   const initializeCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -140,8 +171,7 @@ const SystemCheckDialog: React.FC<SystemCheckDialogProps> = ({ open, onComplete 
       });
     }
   };
-  
-  // Capture student's photo
+
   const capturePhoto = () => {
     if (videoRef.current && canvasRef.current) {
       const context = canvasRef.current.getContext('2d');
@@ -155,8 +185,7 @@ const SystemCheckDialog: React.FC<SystemCheckDialogProps> = ({ open, onComplete 
       }
     }
   };
-  
-  // Complete the system check process
+
   const handleComplete = () => {
     if (!studentImage) {
       toast({
@@ -173,10 +202,9 @@ const SystemCheckDialog: React.FC<SystemCheckDialogProps> = ({ open, onComplete 
     
     onComplete(true, studentImage);
   };
-  
+
   return (
     <Dialog open={open} onOpenChange={() => {
-      // This prevents the dialog from closing when clicking outside or pressing escape
       return;
     }}>
       <DialogContent className="sm:max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
@@ -215,6 +243,11 @@ const SystemCheckDialog: React.FC<SystemCheckDialogProps> = ({ open, onComplete 
                   <div>
                     <div className="font-medium text-sm">{check.name}</div>
                     <div className="text-xs text-gray-500">{check.message}</div>
+                    {check.status === 'fail' && check.fixInstructions && (
+                      <div className="text-xs text-red-500 mt-1">
+                        Fix: {check.fixInstructions}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div>
@@ -233,7 +266,7 @@ const SystemCheckDialog: React.FC<SystemCheckDialogProps> = ({ open, onComplete 
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle>System Check Failed</AlertTitle>
                 <AlertDescription>
-                  Your system doesn't meet one or more requirements. Please fix the issues and try again.
+                  Your system doesn't meet one or more requirements. Please fix the issues and click "Retry Checks" below.
                 </AlertDescription>
               </Alert>
             )}
@@ -258,14 +291,25 @@ const SystemCheckDialog: React.FC<SystemCheckDialogProps> = ({ open, onComplete 
         
         <DialogFooter>
           {currentStep === 'checking' && (
-            <Button 
-              onClick={handleProceedToCamera} 
-              disabled={systemChecks.some(check => check.status === 'checking' || check.status === 'pending') || !allChecksPassed}
-            >
-              {systemChecks.some(check => check.status === 'checking' || check.status === 'pending')
-                ? 'Checking...'
-                : allChecksPassed ? 'Proceed to Camera Check' : 'Retry Checks'}
-            </Button>
+            <div className="flex gap-2 w-full justify-end">
+              {systemChecks.some(check => check.status === 'fail') && (
+                <Button 
+                  variant="outline" 
+                  onClick={retryFailedChecks}
+                  disabled={systemChecks.some(check => check.status === 'checking')}
+                >
+                  Retry Checks
+                </Button>
+              )}
+              <Button 
+                onClick={handleProceedToCamera} 
+                disabled={systemChecks.some(check => check.status === 'checking' || check.status === 'pending') || !allChecksPassed}
+              >
+                {systemChecks.some(check => check.status === 'checking' || check.status === 'pending')
+                  ? 'Checking...'
+                  : allChecksPassed ? 'Proceed to Camera Check' : 'Fix Issues First'}
+              </Button>
+            </div>
           )}
           
           {currentStep === 'camera' && (
