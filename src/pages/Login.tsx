@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BookOpen } from 'lucide-react';
@@ -8,10 +7,14 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Label } from '@/components/ui/label';
+import { supabase } from '@/integrations/supabase/client';
 
 const Login: React.FC = () => {
+  const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { login } = useAuth();
   const { toast } = useToast();
@@ -22,12 +25,31 @@ const Login: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      await login(email, password);
-      navigate('/dashboard');
-    } catch (error) {
+      if (isSignUp) {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              name,
+              role: 'candidate' // Default role for new signups
+            }
+          }
+        });
+        if (error) throw error;
+        
+        toast({
+          title: "Registration Successful",
+          description: "Please check your email for verification.",
+        });
+      } else {
+        await login(email, password);
+        navigate('/dashboard');
+      }
+    } catch (error: any) {
       toast({
-        title: 'Login Failed',
-        description: 'Invalid email or password. Please try again.',
+        title: isSignUp ? 'Registration Failed' : 'Login Failed',
+        description: error.message || 'Please try again.',
         variant: 'destructive',
       });
     } finally {
@@ -47,117 +69,130 @@ const Login: React.FC = () => {
         
         <Card className="border-emerald-100 shadow-lg">
           <CardHeader className="space-y-1">
-            <CardTitle className="text-2xl text-center">Welcome back</CardTitle>
+            <CardTitle className="text-2xl text-center">Welcome</CardTitle>
             <CardDescription className="text-center">
-              Login to access the assessment platform
+              {isSignUp ? 'Create an account to get started' : 'Sign in to access your account'}
             </CardDescription>
           </CardHeader>
           
-          <Tabs defaultValue="login" className="w-full">
+          <Tabs defaultValue="auth" className="w-full">
             <TabsList className="grid w-full grid-cols-2 mb-4">
-              <TabsTrigger value="login">Login</TabsTrigger>
-              <TabsTrigger value="help">Help</TabsTrigger>
+              <TabsTrigger 
+                value="auth" 
+                onClick={() => setIsSignUp(false)}
+              >
+                Login
+              </TabsTrigger>
+              <TabsTrigger 
+                value="signup" 
+                onClick={() => setIsSignUp(true)}
+              >
+                Sign Up
+              </TabsTrigger>
             </TabsList>
             
-            <TabsContent value="login">
-              <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-4">
+            <TabsContent value="auth">
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <CardContent className="space-y-4">
+                  {isSignUp && (
+                    <div className="space-y-2">
+                      <Label htmlFor="name">Full Name</Label>
+                      <Input
+                        id="name"
+                        placeholder="Enter your full name"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        required={isSignUp}
+                        className="border-emerald-200 focus:border-emerald-400"
+                      />
+                    </div>
+                  )}
+                  
                   <div className="space-y-2">
-                    <label htmlFor="email" className="text-sm font-medium">Email</label>
+                    <Label htmlFor="email">Email</Label>
                     <Input
                       id="email"
-                      placeholder="Enter your email"
                       type="email"
+                      placeholder="Enter your email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
                       className="border-emerald-200 focus:border-emerald-400"
                     />
                   </div>
+
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <label htmlFor="password" className="text-sm font-medium">Password</label>
-                      <a href="#" className="text-xs text-emerald-600 hover:text-emerald-700">
-                        Forgot password?
-                      </a>
+                      <Label htmlFor="password">Password</Label>
+                      {!isSignUp && (
+                        <a href="#" className="text-xs text-emerald-600 hover:text-emerald-700">
+                          Forgot password?
+                        </a>
+                      )}
                     </div>
                     <Input
                       id="password"
-                      placeholder="Enter your password"
                       type="password"
+                      placeholder="Enter your password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       required
                       className="border-emerald-200 focus:border-emerald-400"
                     />
                   </div>
+                </CardContent>
 
-                  <div className="pt-2">
-                    <Button 
-                      type="submit" 
-                      className="w-full bg-emerald-600 hover:bg-emerald-700" 
-                      disabled={isSubmitting}
-                    >
-                      {isSubmitting ? 'Signing in...' : 'Sign in'}
-                    </Button>
-                  </div>
-                </form>
-              </CardContent>
-              <CardFooter className="flex justify-center pt-0">
-                <div className="text-sm text-center text-gray-500">
-                  <p className="mb-3">Demo Credentials:</p>
-                  <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
-                    <div className="p-2 bg-emerald-50 rounded">
-                      <div className="font-semibold">Administrator</div>
-                      <div>admin@example.com</div>
-                      <div>password</div>
-                    </div>
-                    <div className="p-2 bg-emerald-50 rounded">
-                      <div className="font-semibold">Recruiter</div>
-                      <div>recruiter@example.com</div>
-                      <div>password</div>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 mt-2 text-xs">
-                    <div className="p-2 bg-emerald-50 rounded">
-                      <div className="font-semibold">Candidate</div>
-                      <div>candidate@example.com</div>
-                      <div>password</div>
-                    </div>
-                    <div className="p-2 bg-emerald-50 rounded">
-                      <div className="font-semibold">SME</div>
-                      <div>sme@example.com</div>
-                      <div>password</div>
-                    </div>
-                    <div className="p-2 bg-emerald-50 rounded">
-                      <div className="font-semibold">University SPOC</div>
-                      <div>university@example.com</div>
-                      <div>password</div>
-                    </div>
-                  </div>
-                </div>
-              </CardFooter>
-            </TabsContent>
-            
-            <TabsContent value="help">
-              <CardContent>
-                <div className="space-y-4">
-                  <h3 className="font-medium">Login Help</h3>
-                  <p className="text-sm text-gray-500">
-                    If you're a candidate, your login details should have been provided by your college placement officer.
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    For recruiters, SMEs, and administrators, please contact the system administrator to get your login credentials.
-                  </p>
-                  <div className="pt-2">
-                    <Button variant="outline" className="w-full" onClick={() => window.location.href = 'mailto:support@campushire.com'}>
-                      Contact Support
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
+                <CardFooter>
+                  <Button 
+                    type="submit" 
+                    className="w-full bg-emerald-600 hover:bg-emerald-700" 
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting 
+                      ? (isSignUp ? 'Creating account...' : 'Signing in...') 
+                      : (isSignUp ? 'Create Account' : 'Sign in')}
+                  </Button>
+                </CardFooter>
+              </form>
             </TabsContent>
           </Tabs>
+
+          {!isSignUp && (
+            <CardFooter className="flex justify-center pt-0">
+              <div className="text-sm text-center text-gray-500">
+                <p className="mb-3">Demo Credentials:</p>
+                <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
+                  <div className="p-2 bg-emerald-50 rounded">
+                    <div className="font-semibold">Administrator</div>
+                    <div>admin@example.com</div>
+                    <div>password</div>
+                  </div>
+                  <div className="p-2 bg-emerald-50 rounded">
+                    <div className="font-semibold">Recruiter</div>
+                    <div>recruiter@example.com</div>
+                    <div>password</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2 mt-2 text-xs">
+                  <div className="p-2 bg-emerald-50 rounded">
+                    <div className="font-semibold">Candidate</div>
+                    <div>candidate@example.com</div>
+                    <div>password</div>
+                  </div>
+                  <div className="p-2 bg-emerald-50 rounded">
+                    <div className="font-semibold">SME</div>
+                    <div>sme@example.com</div>
+                    <div>password</div>
+                  </div>
+                  <div className="p-2 bg-emerald-50 rounded">
+                    <div className="font-semibold">University SPOC</div>
+                    <div>university@example.com</div>
+                    <div>password</div>
+                  </div>
+                </div>
+              </div>
+            </CardFooter>
+          )}
         </Card>
       </div>
     </div>
