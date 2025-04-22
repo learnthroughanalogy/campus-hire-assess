@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BookOpen } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -10,15 +11,96 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 
+const demoAccounts = [
+  { email: 'admin@example.com', password: 'password', name: 'Admin User', role: 'administrator' },
+  { email: 'recruiter@example.com', password: 'password', name: 'Recruiter User', role: 'recruiter' },
+  { email: 'candidate@example.com', password: 'password', name: 'Candidate User', role: 'candidate' },
+  { email: 'sme@example.com', password: 'password', name: 'SME User', role: 'sme' },
+  { email: 'university@example.com', password: 'password', name: 'University SPOC', role: 'university_spoc' },
+];
+
 const Login: React.FC = () => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [demoAccountsCreated, setDemoAccountsCreated] = useState(false);
   const { login } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  // Create demo accounts on component mount
+  useEffect(() => {
+    const createDemoAccounts = async () => {
+      try {
+        // Check if demo accounts already exist by trying to login with one
+        const { error } = await supabase.auth.signInWithPassword({
+          email: 'admin@example.com',
+          password: 'password'
+        });
+
+        // If the account exists, don't recreate accounts
+        if (!error) {
+          console.log('Demo accounts already exist');
+          setDemoAccountsCreated(true);
+          // Sign out immediately since we just want to check if account exists
+          await supabase.auth.signOut();
+          return;
+        }
+
+        console.log('Creating demo accounts...');
+        
+        // Create demo accounts
+        for (const account of demoAccounts) {
+          // Check if user exists first
+          const { data: userData } = await supabase.auth.signInWithPassword({
+            email: account.email,
+            password: account.password
+          });
+          
+          // If user doesn't exist, create account
+          if (!userData.user) {
+            // Sign out if we accidentally logged in
+            await supabase.auth.signOut();
+            
+            const { error } = await supabase.auth.signUp({
+              email: account.email,
+              password: account.password,
+              options: {
+                data: {
+                  name: account.name,
+                  role: account.role
+                }
+              }
+            });
+            
+            if (error) {
+              console.error(`Error creating demo account for ${account.email}:`, error);
+            } else {
+              console.log(`Created demo account for ${account.email}`);
+            }
+          } else {
+            // Sign out if we successfully logged in
+            await supabase.auth.signOut();
+          }
+        }
+        
+        toast({
+          title: 'Demo Accounts Ready',
+          description: 'All demo accounts have been created successfully.',
+        });
+        
+        setDemoAccountsCreated(true);
+      } catch (error) {
+        console.error('Error creating demo accounts:', error);
+      }
+    };
+
+    if (!demoAccountsCreated) {
+      createDemoAccounts();
+    }
+  }, [demoAccountsCreated, toast]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
