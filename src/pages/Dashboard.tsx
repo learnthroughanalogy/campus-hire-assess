@@ -6,7 +6,7 @@ import HRDashboard from '@/components/dashboard/HRDashboard';
 import StudentDashboard from '@/components/dashboard/StudentDashboard';
 
 const Dashboard: React.FC = () => {
-  const { user, isAdministrator, isRecruiter, isCandidate, isSME, isUniversitySPOC } = useAuth();
+  const { profile, isAdministrator, isRecruiter, isCandidate, isSME, isUniversitySPOC } = useAuth();
 
   return (
     <AppLayout>
@@ -14,7 +14,7 @@ const Dashboard: React.FC = () => {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground">
-            Welcome back, {user?.name}! {user?.role && `(${user.role.replace('_', ' ')})`}
+            Welcome back, {profile?.name || 'User'}! {profile?.role && `(${profile.role.replace('_', ' ')})`}
           </p>
         </div>
 

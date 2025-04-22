@@ -13,7 +13,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   children, 
   allowedRoles = ['administrator', 'recruiter', 'candidate', 'sme', 'university_spoc', 'hr', 'student'] 
 }) => {
-  const { user, isLoading } = useAuth();
+  const { user, profile, isLoading } = useAuth();
 
   if (isLoading) {
     // You could replace this with a loading spinner
@@ -25,11 +25,11 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   }
 
   // Handle legacy roles
-  let actualRole = user.role;
-  if (user.role === 'hr') actualRole = 'recruiter';
-  if (user.role === 'student') actualRole = 'candidate';
+  let actualRole = profile?.role;
+  if (profile?.role === 'hr') actualRole = 'recruiter';
+  if (profile?.role === 'student') actualRole = 'candidate';
   
-  if (allowedRoles.length > 0 && !allowedRoles.includes(actualRole)) {
+  if (allowedRoles.length > 0 && !allowedRoles.includes(actualRole as UserRole)) {
     return <Navigate to="/unauthorized" replace />;
   }
 

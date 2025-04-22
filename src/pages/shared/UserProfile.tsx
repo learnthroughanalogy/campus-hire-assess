@@ -12,12 +12,12 @@ import { User, Mail, Key, Shield, Bell } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 
 const UserProfile: React.FC = () => {
-  const { user, isRecruiter } = useAuth();
+  const { profile, isRecruiter } = useAuth();
   const { toast } = useToast();
   
   const [userData, setUserData] = useState({
-    name: user?.name || '',
-    email: user?.email || '',
+    name: profile?.name || '',
+    email: profile?.email || '',
     phone: '555-123-4567',
     college: isRecruiter ? 'HR Department' : 'Tech University',
     department: isRecruiter ? 'Recruitment' : 'Computer Science',
@@ -118,9 +118,9 @@ const UserProfile: React.FC = () => {
                     <User className="w-8 h-8" />
                   </div>
                   <div>
-                    <h3 className="font-medium">{user?.name}</h3>
+                    <h3 className="font-medium">{profile?.name || 'User'}</h3>
                     <p className="text-sm text-muted-foreground">
-                      {user?.role === 'recruiter' || user?.role === 'hr' ? 'HR Manager' : 'Student'}
+                      {profile?.role === 'recruiter' || profile?.role === 'hr' ? 'HR Manager' : 'Student'}
                     </p>
                   </div>
                 </div>

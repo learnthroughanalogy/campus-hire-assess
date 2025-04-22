@@ -18,7 +18,7 @@ interface AppLayoutProps {
 }
 
 const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
-  const { user, logout, isRecruiter, isCandidate } = useAuth();
+  const { user, profile, logout, isRecruiter, isCandidate } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -38,7 +38,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           
           {user && (
             <div className="flex items-center space-x-4">
-              <span className="hidden sm:inline">{user.name}</span>
+              <span className="hidden sm:inline">{profile?.name || 'User'}</span>
               <Button
                 variant="ghost"
                 size="sm"
